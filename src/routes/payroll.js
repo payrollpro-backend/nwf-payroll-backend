@@ -2,15 +2,19 @@ const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+
+// ❌ REMOVE AUTH MIDDLEWARE
+// const { requireAuth, requireAdmin } = require('../middleware/auth');
 
 const router = express.Router();
 
 function calculateNetPay(gross) {
+  // Example: 10% tax, modify as needed
   return gross * 0.9;
 }
 
-router.post('/run', requireAuth, requireAdmin, async (req, res) => {
+// Payroll run — OPEN (no auth)
+router.post('/run', async (req, res) => {
   try {
     const {
       employeeId,
@@ -26,6 +30,7 @@ router.post('/run', requireAuth, requireAdmin, async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
+    // Calculate gross/net
     const rate = hourlyRate || employee.hourlyRate;
     const grossPay = rate * hoursWorked;
     const netPay = calculateNetPay(grossPay);
@@ -40,6 +45,7 @@ router.post('/run', requireAuth, requireAdmin, async (req, res) => {
       notes,
     });
 
+    // Create automatic paystub name
     const payDate = new Date(periodEnd);
     const iso = payDate.toISOString().slice(0, 10);
     const fileName = `nwf_${iso}.pdf`;
