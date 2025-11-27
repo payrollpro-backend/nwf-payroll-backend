@@ -92,5 +92,34 @@ router.post('/login', async (req, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+// TEMP: Admin password reset helper (remove after things are stable)
+router.patch('/admin-reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body;
+
+    if (!email || !newPassword) {
+      return res.status(400).json({ error: 'Email and newPassword are required' });
+    }
+
+    const admin = await Employee.findOne({ email });
+
+    if (!admin) {
+      return res.status(404).json({ error: 'Admin not found' });
+    }
+
+    // Optional: make sure this is actually an admin account
+    if (admin.role !== 'admin') {
+      return res.status(400).json({ error: 'User is not an admin account' });
+    }
+
+    admin.passwordHash = await bcrypt.hash(newPassword, 10);
+    await admin.save();
+
+    res.json({ message: 'Admin password updated' });
+  } catch (err) {
+    console.error('Admin reset error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
