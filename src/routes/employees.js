@@ -1,82 +1,43 @@
-const express = require('express');
-const bcrypt = require('bcryptjs');
-const Employee = require('../models/Employee');
-// REMOVE auth middleware import
-// const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { sendWelcomeEmail } = require('../utils/email');
+const EmployeeSchema = new mongoose.Schema({
+  employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
 
-const router = express.Router();
+  firstName: String,
+  lastName: String,
+  email: String,
+  phone: String,
 
-function generateTempPassword(len = 10) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
-}
+  // Auto-generated external ID like "Emp ID 01002"
+  externalEmployeeId: { type: String, unique: true },
 
-// Create employee — OPEN (no auth needed)
-router.post('/', async (req, res) => {
-  try {
-    const {
-      firstName,
-      lastName,
-      email,
-      phone,
-      companyName,
-      hourlyRate,
-    } = req.body;
+  // Onboarding data
+  address: {
+    line1: String,
+    line2: String,
+    city: String,
+    state: String,
+    zip: String,
+  },
+  dateOfBirth: Date,
+  ssnLast4: String,          // only last 4, do NOT store full SSN in plain text
+  payMethod: {
+    type: String,
+    enum: ['direct_deposit', 'paper_check'],
+    default: 'direct_deposit',
+  },
+  directDeposit: {
+    bankName: String,
+    routingLast4: String,
+    accountLast4: String,
+    accountType: { type: String, enum: ['checking', 'savings'], default: 'checking' },
+  },
 
-    if (!firstName || !lastName || !email) {
-      return res
-        .status(400)
-        .json({ error: 'firstName, lastName and email are required.' });
-    }
+  companyName: String,
+  hourlyRate: { type: Number, default: 0 },
 
-    const existing = await Employee.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ error: 'Email already in use.' });
-    }
+  // Withholding percentages (per pay period)
+  federalWithholdingRate: { type: Number, default: 0.18 }, // 18% default
+  stateWithholdingRate:   { type: Number, default: 0.05 }, // 5% GA default
 
-    const tempPassword = generateTempPassword();
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-    const employee = await Employee.create({
-      firstName,
-      lastName,
-      email,
-      phone,
-      companyName: companyName || 'NWF Payroll Client',
-      hourlyRate: hourlyRate || 0,
-      role: 'employee',
-      passwordHash,
-    });
-
-    // OPTIONAL — you can comment this out if not using email
-    try {
-      await sendWelcomeEmail(employee.email, tempPassword);
-    } catch (emailErr) {
-      console.error('Error sending welcome email:', emailErr.message);
-    }
-
-    res.status(201).json({
-      employee,
-      tempPassword,
-    });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// List employees — OPEN (no auth needed)
-router.get('/', async (req, res) => {
-  try {
-    const employees = await Employee.find().sort({ createdAt: -1 });
-    res.json(employees);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-module.exports = router;
+  role: { type: String, enum: ['employee'], default: 'employee' },
+  passwordHash: String,
+}, { timestamps: true });
