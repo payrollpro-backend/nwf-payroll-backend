@@ -2,13 +2,23 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Employee = require('../models/Employee');
-const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
 const router = express.Router();
+
+// 👇 add this
+const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
 function signToken(user) {
   return jwt.sign(
     {
+      id: user._id.toString(),
+      role: user.role,
+      employerId: user.employer ? user.employer.toString() : null,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
       id: user._id.toString(),
       role: user.role,
       employerId: user.employer ? user.employer.toString() : null,
