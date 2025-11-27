@@ -127,5 +127,6 @@ router.post('/:id/reject', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+module.exports = mongoose.model('Employer', EmployerSchema);
 
 module.exports = router;
