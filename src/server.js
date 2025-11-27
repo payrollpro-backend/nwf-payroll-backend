@@ -6,20 +6,21 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const Employee = require('./models/Employee');
 
-
 const app = express();
 
+// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
 // ROUTES
 const authRoutes = require('./routes/auth');
-const employerRoutes = require('./routes/employers');  // ⬅️ NEW
+const employerRoutes = require('./routes/employers');   // Employer signup / portal
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');
 
+// ROOT HEALTHCHECK
 app.get('/', (req, res) => {
   res.json({
     message: process.env.APP_NAME || 'NWF Payroll Backend is running',
@@ -28,13 +29,12 @@ app.get('/', (req, res) => {
 
 // MOUNT ROUTES
 app.use('/api/auth', authRoutes);
-app.use('/api/employers', employerRoutes);  // ⬅️ NEW (employer signup portal)
+app.use('/api/employers', employerRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 
-// DB + SERVER START
-const mongoUri = process.env.MONGO_URI;
+// === DEFAULT ADMIN SEEDER ===
 async function ensureDefaultAdmin() {
   const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@nwfpayroll.com';
   const password = process.env.DEFAULT_ADMIN_PASSWORD || 'StrongPass123!';
@@ -58,13 +58,25 @@ async function ensureDefaultAdmin() {
   console.log('✅ Created default admin:', email, 'password:', password);
 }
 
+// DB + SERVER START
+const mongoUri = process.env.MONGO_URI;
+const PORT = process.env.PORT || 10000;
+
+if (!mongoUri) {
+  console.error('❌ MONGO_URI is not set in environment variables');
+  process.exit(1);
+}
+
 mongoose
   .connect(mongoUri)
-  .then(() => {
-    console.log('Connected to MongoDB');
-    const PORT = process.env.PORT || 3000;
+  .then(async () => {
+    console.log('✅ Connected to MongoDB');
+
+    // Make sure a default admin exists before the app starts serving requests
+    await ensureDefaultAdmin();
+
     app.listen(PORT, () => {
-      console.log(`Server listening on port ${PORT}`);
+      console.log(`✅ Server listening on port ${PORT}`);
     });
   })
   .catch((err) => {
