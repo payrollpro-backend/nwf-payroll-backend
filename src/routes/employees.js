@@ -1,7 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const Employee = require('../models/Employee');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+// REMOVE auth middleware import
+// const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { sendWelcomeEmail } = require('../utils/email');
 
 const router = express.Router();
@@ -15,8 +16,8 @@ function generateTempPassword(len = 10) {
   return out;
 }
 
-// Create employee (admin only)
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
+// Create employee — OPEN (no auth needed)
+router.post('/', async (req, res) => {
   try {
     const {
       firstName,
@@ -52,6 +53,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       passwordHash,
     });
 
+    // OPTIONAL — you can comment this out if not using email
     try {
       await sendWelcomeEmail(employee.email, tempPassword);
     } catch (emailErr) {
@@ -67,8 +69,8 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// List employees (admin only)
-router.get('/', requireAuth, requireAdmin, async (req, res) => {
+// List employees — OPEN (no auth needed)
+router.get('/', async (req, res) => {
   try {
     const employees = await Employee.find().sort({ createdAt: -1 });
     res.json(employees);
