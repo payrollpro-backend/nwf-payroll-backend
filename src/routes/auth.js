@@ -1,3 +1,4 @@
+// src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -5,9 +6,12 @@ const Employee = require('../models/Employee');
 
 const router = express.Router();
 
-// 👇 add this
+// Use env secret if set, otherwise a dev fallback
 const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
+/**
+ * Sign a JWT for a user/admin
+ */
 function signToken(user) {
   return jwt.sign(
     {
@@ -19,25 +23,12 @@ function signToken(user) {
     { expiresIn: '7d' }
   );
 }
-      id: user._id.toString(),
-      role: user.role,
-      employerId: user.employer ? user.employer.toString() : null,
-    },
-    JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
 
-      id: user._id.toString(),
-      role: user.role,
-      employerId: user.employer ? user.employer.toString() : null,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: '7d' }
-  );
-}
-
-// Create first admin (one time)
+/**
+ * Create first admin (one time)
+ * You can call this via POST /api/auth/admin-register if you want a different admin,
+ * but we’re ALSO auto-creating a default in server.js.
+ */
 router.post('/admin-register', async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
@@ -81,12 +72,14 @@ router.post('/admin-register', async (req, res) => {
   }
 });
 
-// Login for admin/employer/employee
+/**
+ * Login for admin/employer/employee
+ */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
 
-    // 1) Check body first
+    // 1) Check body
     if (!email || !password) {
       return res
         .status(400)
@@ -101,7 +94,8 @@ router.post('/login', async (req, res) => {
 
     if (!user.passwordHash) {
       return res.status(400).json({
-        error: 'This user has no password set. Create admin with /admin-register or reset password.',
+        error:
+          'This user has no password set. Create admin with /admin-register or reset password.',
       });
     }
 
@@ -131,7 +125,9 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// TEMP: Admin password reset helper
+/**
+ * TEMP: Admin password reset helper
+ */
 router.patch('/admin-reset-password', async (req, res) => {
   try {
     const { email, newPassword } = req.body;
