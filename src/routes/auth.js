@@ -1,11 +1,14 @@
+// src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Employee = require('../models/Employee');
-const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
+/**
+ * Sign a JWT for a user/admin
+ */
 function signToken(user) {
   return jwt.sign(
     { id: user._id.toString(), role: user.role },
@@ -14,22 +17,43 @@ function signToken(user) {
   );
 }
 
-// One-time admin registration
+/**
+ * Simple inline auth middleware for routes that need login
+ * (Used for /me and /change-password)
+ */
+function authMiddleware(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  try {
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    req.userId = payload.id;
+    req.userRole = payload.role;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
+
+/**
+ * OPTIONAL: create an admin user
+ * Call once via POST /api/auth/admin-register then disable/remove in production.
+ */
 router.post('/admin-register', async (req, res) => {
   try {
     const { firstName, lastName, email, password } = req.body;
 
-    const existingAdmin = await Employee.findOne({ role: 'admin' });
-    if (existingAdmin) {
-      return res
-        .status(400)
-        .json({ error: 'Admin already exists. Use /login instead.' });
+    if (!firstName || !lastName || !email || !password) {
+      return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    if (!firstName || !lastName || !email || !password) {
-      return res
-        .status(400)
-        .json({ error: 'firstName, lastName, email and password are required.' });
+    const existing = await Employee.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ error: 'Email is already in use' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
@@ -39,8 +63,7 @@ router.post('/admin-register', async (req, res) => {
       lastName,
       email,
       passwordHash,
-      role: 'admin',
-      companyName: 'NWF Payroll',
+      role: 'admin',  // make sure your Employee schema allows this role
     });
 
     const token = signToken(admin);
@@ -56,23 +79,30 @@ router.post('/admin-register', async (req, res) => {
       },
     });
   } catch (err) {
+    console.error('admin-register error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// Login
+/**
+ * Login (admin or employee, depending on role in DB)
+ */
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
     const user = await Employee.findOne({ email });
     if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(400).json({ error: 'Invalid email or password' });
     }
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+
+    const match = await bcrypt.compare(password, user.passwordHash || '');
+    if (!match) {
+      return res.status(400).json({ error: 'Invalid email or password' });
     }
+
     const token = signToken(user);
+
     res.json({
       token,
       user: {
@@ -84,36 +114,44 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (err) {
+    console.error('login error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// Me
-router.get('/me', requireAuth, async (req, res) => {
-  const u = req.user;
-  res.json({
-    id: u._id,
-    firstName: u.firstName,
-    lastName: u.lastName,
-    email: u.email,
-    role: u.role,
-  });
+/**
+ * Get current user profile based on token
+ */
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await Employee.findById(req.userId).select('-passwordHash');
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    console.error('me error:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Change password
-router.post('/change-password', requireAuth, async (req, res) => {
+/**
+ * Change password for logged-in user
+ */
+router.post('/change-password', authMiddleware, async (req, res) => {
   try {
-    const { oldPassword, newPassword } = req.body;
-    const user = req.user;
+    const { currentPassword, newPassword } = req.body;
+    const user = await Employee.findById(req.userId);
 
-    const ok = await bcrypt.compare(oldPassword, user.passwordHash);
-    if (!ok) {
-      return res.status(400).json({ error: 'Old password is incorrect' });
-    }
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const ok = await bcrypt.compare(currentPassword, user.passwordHash || '');
+    if (!ok) return res.status(400).json({ error: 'Current password is incorrect' });
+
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
-    res.json({ message: 'Password updated' });
+
+    res.json({ success: true });
   } catch (err) {
+    console.error('change-password error:', err);
     res.status(400).json({ error: err.message });
   }
 });
