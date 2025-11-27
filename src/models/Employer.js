@@ -1,29 +1,24 @@
-// src/models/Employer.js
-
 const mongoose = require('mongoose');
 
 const EmployerSchema = new mongoose.Schema(
   {
     companyName: { type: String, required: true },
-    ein: { type: String },
-    companyEmail: { type: String },
-
+    ein: String,
+    companyEmail: String,
     address: {
-      line1: { type: String },
-      line2: { type: String },
-      city: { type: String },
-      state: { type: String },
-      zip: { type: String },
+      line1: String,
+      line2: String,
+      city: String,
+      state: String,
+      zip: String,
     },
-
     documents: [
       {
-        filename: { type: String },
-        url: { type: String },
+        filename: String,
+        url: String,
         uploadedAt: { type: Date, default: Date.now },
       },
     ],
-
     status: {
       type: String,
       enum: ['pending', 'approved', 'rejected'],
