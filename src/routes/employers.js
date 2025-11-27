@@ -1,12 +1,13 @@
-// routes/employers.js
+// src/routes/employers.js
 
 const express = require('express');
+const mongoose = require('mongoose');
 
-// IMPORTANT: change this line depending on your actual file name
-// If your model file is Employer.js use:
-const Employer = require('../models/Employer');
-// If your model file is employers.js use:
-// const Employer = require('../models/employers');
+// ✅ Load the schema file for side-effect (it registers the model with Mongoose)
+require('../models/employers');
+
+// ✅ Now safely grab the model by name
+const Employer = mongoose.model('Employer');
 
 const router = express.Router();
 
@@ -21,11 +22,11 @@ router.post('/signup', async (req, res) => {
       ein,
       companyEmail,
       address,
-      documents
+      documents,
     } = req.body;
 
     if (!companyName) {
-      return res.status(400).json({ error: "companyName is required" });
+      return res.status(400).json({ error: 'companyName is required' });
     }
 
     const employer = await Employer.create({
@@ -33,23 +34,22 @@ router.post('/signup', async (req, res) => {
       ein,
       companyEmail,
       address: {
-        line1: address?.line1 || "",
-        line2: address?.line2 || "",
-        city: address?.city || "",
-        state: address?.state || "",
-        zip: address?.zip || "",
+        line1: address?.line1 || '',
+        line2: address?.line2 || '',
+        city: address?.city || '',
+        state: address?.state || '',
+        zip: address?.zip || '',
       },
       documents: Array.isArray(documents) ? documents : [],
-      status: "pending",
+      status: 'pending',
     });
 
     res.status(201).json(employer);
   } catch (err) {
-    console.error("Employer signup error:", err);
+    console.error('Employer signup error:', err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /**
  * GET /api/employers
@@ -63,11 +63,10 @@ router.get('/', async (req, res) => {
 
     res.json(employers);
   } catch (err) {
-    console.error("Get employers error:", err);
+    console.error('Get employers error:', err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /**
  * GET /api/employers/pending
@@ -75,17 +74,16 @@ router.get('/', async (req, res) => {
  */
 router.get('/pending', async (req, res) => {
   try {
-    const pending = await Employer.find({ status: "pending" })
+    const pending = await Employer.find({ status: 'pending' })
       .sort({ createdAt: 1 })
       .lean();
 
     res.json(pending);
   } catch (err) {
-    console.error("Get pending employers error:", err);
+    console.error('Get pending employers error:', err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /**
  * POST /api/employers/:id/approve
@@ -97,21 +95,20 @@ router.post('/:id/approve', async (req, res) => {
 
     const updated = await Employer.findByIdAndUpdate(
       id,
-      { status: "approved" },
-      { new: true }
+      { status: 'approved' },
+      { new: true },
     );
 
     if (!updated) {
-      return res.status(404).json({ error: "Employer not found" });
+      return res.status(404).json({ error: 'Employer not found' });
     }
 
     res.json(updated);
   } catch (err) {
-    console.error("Approve employer error:", err);
+    console.error('Approve employer error:', err);
     res.status(500).json({ error: err.message });
   }
 });
-
 
 /**
  * POST /api/employers/:id/reject
@@ -123,17 +120,17 @@ router.post('/:id/reject', async (req, res) => {
 
     const updated = await Employer.findByIdAndUpdate(
       id,
-      { status: "rejected" },
-      { new: true }
+      { status: 'rejected' },
+      { new: true },
     );
 
     if (!updated) {
-      return res.status(404).json({ error: "Employer not found" });
+      return res.status(404).json({ error: 'Employer not found' });
     }
 
     res.json(updated);
   } catch (err) {
-    console.error("Reject employer error:", err);
+    console.error('Reject employer error:', err);
     res.status(500).json({ error: err.message });
   }
 });
