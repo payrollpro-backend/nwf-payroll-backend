@@ -10,7 +10,9 @@ app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
 
+// ROUTES
 const authRoutes = require('./routes/auth');
+const employerRoutes = require('./routes/employers');  // ⬅️ NEW
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');
@@ -21,11 +23,14 @@ app.get('/', (req, res) => {
   });
 });
 
+// MOUNT ROUTES
 app.use('/api/auth', authRoutes);
+app.use('/api/employers', employerRoutes);  // ⬅️ NEW (employer signup portal)
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 
+// DB + SERVER START
 const mongoUri = process.env.MONGO_URI;
 
 mongoose
