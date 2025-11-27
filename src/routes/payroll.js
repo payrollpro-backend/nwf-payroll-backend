@@ -1,19 +1,17 @@
+// routes/payroll.js
 const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 
-// ❌ REMOVE AUTH MIDDLEWARE
-// const { requireAuth, requireAdmin } = require('../middleware/auth');
-
 const router = express.Router();
 
-function calculateNetPay(gross) {
-  // Example: 10% tax, modify as needed
-  return gross * 0.9;
+function calcFica(gross) {
+  const socialSecurity = gross * 0.062;   // 6.2%
+  const medicare       = gross * 0.0145;  // 1.45%
+  return { socialSecurity, medicare };
 }
 
-// Payroll run — OPEN (no auth)
 router.post('/run', async (req, res) => {
   try {
     const {
@@ -30,25 +28,51 @@ router.post('/run', async (req, res) => {
       return res.status(404).json({ error: 'Employee not found' });
     }
 
-    // Calculate gross/net
-    const rate = hourlyRate || employee.hourlyRate;
-    const grossPay = rate * hoursWorked;
-    const netPay = calculateNetPay(grossPay);
+    const hours = Number(hoursWorked || 0);
+    const rate  = Number(hourlyRate || employee.hourlyRate || 0);
+
+    const grossPay = rate * hours;
+
+    // FICA
+    const { socialSecurity, medicare } = calcFica(grossPay);
+
+    // Income taxes from employee record (set via state defaults)
+    const fedRate   = employee.federalWithholdingRate || 0.18;
+    const stateRate = employee.stateWithholdingRate   || 0.05;
+
+    const federalIncomeTax = grossPay * fedRate;
+    const stateIncomeTax   = grossPay * stateRate;
+
+    const totalTaxes =
+      federalIncomeTax + stateIncomeTax + socialSecurity + medicare;
+
+    const netPay = grossPay - totalTaxes;
 
     const payrollRun = await PayrollRun.create({
       employee: employee._id,
       periodStart,
       periodEnd,
-      hoursWorked,
+      hoursWorked: hours,
+      hourlyRate: rate,
       grossPay,
       netPay,
+      federalIncomeTax,
+      stateIncomeTax,
+      socialSecurity,
+      medicare,
+      totalTaxes,
       notes,
     });
 
-    // Create automatic paystub name
+    // === New paystub file naming ===
     const payDate = new Date(periodEnd);
-    const iso = payDate.toISOString().slice(0, 10);
-    const fileName = `nwf_${iso}.pdf`;
+    const isoDate = payDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    const extId = employee.externalEmployeeId || '';          // Emp_ID_938203948
+    const digitsOnly = extId.replace(/\D/g, '');              // "938203948"
+    const last4 = digitsOnly.slice(-4) || '0000';             // "3948" or "0000"
+
+    const fileName = `nwf_${last4}_${isoDate}.pdf`;
 
     const paystub = await Paystub.create({
       employee: employee._id,
@@ -59,6 +83,7 @@ router.post('/run', async (req, res) => {
 
     res.status(201).json({ payrollRun, paystub });
   } catch (err) {
+    console.error('Run payroll error:', err);
     res.status(400).json({ error: err.message });
   }
 });
