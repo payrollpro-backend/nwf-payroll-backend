@@ -7,11 +7,17 @@ const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 const router = express.Router();
 
 function signToken(user) {
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not set in environment variables');
-  }
   return jwt.sign(
     {
+      id: user._id.toString(),
+      role: user.role,
+      employerId: user.employer ? user.employer.toString() : null,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
       id: user._id.toString(),
       role: user.role,
       employerId: user.employer ? user.employer.toString() : null,
