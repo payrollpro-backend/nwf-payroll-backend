@@ -1,24 +1,36 @@
+const mongoose = require('mongoose');
+
 const EmployeeSchema = new mongoose.Schema({
+  // Which employer they belong to (null for NWF internal admin)
   employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
 
+  // Login / identity
   firstName: String,
   lastName: String,
-  email: String,
+  email: { type: String, required: true, unique: true },
   phone: String,
+  passwordHash: String,
 
-  // Auto-generated external ID like "Emp ID 01002"
-  externalEmployeeId: { type: String, unique: true },
+  // 'admin' (NWF), 'employer' (client portal), 'employee' (worker)
+  role: {
+    type: String,
+    enum: ['admin', 'employer', 'employee'],
+    default: 'employee',
+  },
 
-  // Onboarding data
+  // For payroll employees
+  externalEmployeeId: { type: String, unique: true, sparse: true }, // Emp_ID_938203948
+
   address: {
     line1: String,
     line2: String,
     city: String,
-    state: String,
+    state: String,  // 2-letter state
     zip: String,
   },
   dateOfBirth: Date,
-  ssnLast4: String,          // only last 4, do NOT store full SSN in plain text
+  ssnLast4: String,
+
   payMethod: {
     type: String,
     enum: ['direct_deposit', 'paper_check'],
@@ -28,16 +40,18 @@ const EmployeeSchema = new mongoose.Schema({
     bankName: String,
     routingLast4: String,
     accountLast4: String,
-    accountType: { type: String, enum: ['checking', 'savings'], default: 'checking' },
+    accountType: {
+      type: String,
+      enum: ['checking', 'savings'],
+      default: 'checking',
+    },
   },
 
   companyName: String,
   hourlyRate: { type: Number, default: 0 },
 
-  // Withholding percentages (per pay period)
-  federalWithholdingRate: { type: Number, default: 0.18 }, // 18% default
-  stateWithholdingRate:   { type: Number, default: 0.05 }, // 5% GA default
-
-  role: { type: String, enum: ['employee'], default: 'employee' },
-  passwordHash: String,
+  federalWithholdingRate: { type: Number, default: 0.18 },
+  stateWithholdingRate: { type: Number, default: 0.05 },
 }, { timestamps: true });
+
+module.exports = mongoose.model('Employee', EmployeeSchema);
