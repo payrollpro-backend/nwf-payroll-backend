@@ -1,3 +1,4 @@
+// src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -71,6 +72,7 @@ router.post('/admin-register', async (req, res) => {
 
 /**
  * Login for admin/employer/employee
+ * - If user has no passwordHash yet, we set it on first login with this password.
  */
 router.post('/login', async (req, res) => {
   try {
@@ -84,25 +86,43 @@ router.post('/login', async (req, res) => {
     }
 
     // 2) Find user
-    const user = await Employee.findOne({ email });
+    let user = await Employee.findOne({ email });
     if (!user) {
       return res.status(400).json({ error: 'User not found for this email' });
     }
 
+    // 3) If no passwordHash yet, set it now and log them in
     if (!user.passwordHash) {
-      return res.status(400).json({
-        error:
-          'This user has no password set. Create admin with /admin-register or reset password.',
+      const passwordHash = await bcrypt.hash(password, 10);
+      user.passwordHash = passwordHash;
+
+      // If this is your admin email, ensure role is admin
+      if (!user.role) {
+        user.role = 'admin';
+      }
+
+      await user.save();
+
+      const token = signToken(user);
+      return res.json({
+        token,
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          employerId: user.employer || null,
+        },
       });
     }
 
-    // 3) Check password
+    // 4) If passwordHash exists, validate password normally
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
       return res.status(400).json({ error: 'Invalid password' });
     }
 
-    // 4) Token
     const token = signToken(user);
 
     res.json({
