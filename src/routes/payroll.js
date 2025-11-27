@@ -44,7 +44,61 @@ router.post('/run', async (req, res) => {
 
     const netPay = grossPay - totalTaxes;
 
+    // ✅ Use periodEnd as the pay date (your existing behavior)
     const payDate = new Date(periodEnd);
+
+    /*
+      ✅ YTD LOGIC STARTS HERE
+      - Look up prior PayrollRun docs for this employee in the same year
+      - Start from Jan 1 OR employee.startDate (whichever is later)
+      - Sum all prior per-period amounts
+    */
+
+    // Jan 1 of same year as this payDate
+    const yearStart = new Date(payDate.getFullYear(), 0, 1);
+
+    // Start YTD from either Jan 1 or employee.startDate, whichever is later
+    let ytdStart = yearStart;
+    if (employee.startDate && employee.startDate > yearStart) {
+      ytdStart = employee.startDate;
+    }
+
+    const priorRuns = await PayrollRun.find({
+      employee: employee._id,
+      payDate: {
+        $gte: ytdStart,
+        $lt: payDate, // strictly before this pay date
+      },
+    });
+
+    let ytdGrossBefore = 0;
+    let ytdFedBefore = 0;
+    let ytdStateBefore = 0;
+    let ytdSsBefore = 0;
+    let ytdMedBefore = 0;
+    let ytdTaxesBefore = 0;
+
+    priorRuns.forEach(run => {
+      ytdGrossBefore += run.grossPay || 0;
+      ytdFedBefore += run.federalIncomeTax || 0;
+      ytdStateBefore += run.stateIncomeTax || 0;
+      ytdSsBefore += run.socialSecurity || 0;
+      ytdMedBefore += run.medicare || 0;
+      ytdTaxesBefore += run.totalTaxes || 0;
+    });
+
+    // Add current period to get new YTD totals
+    const ytdGrossPay = ytdGrossBefore + grossPay;
+    const ytdFederalIncomeTax = ytdFedBefore + federalIncomeTax;
+    const ytdStateIncomeTax = ytdStateBefore + stateIncomeTax;
+    const ytdSocialSecurity = ytdSsBefore + socialSecurity;
+    const ytdMedicare = ytdMedBefore + medicare;
+    const ytdTotalTaxes = ytdTaxesBefore + totalTaxes;
+    const ytdNetPay = ytdGrossPay - ytdTotalTaxes;
+
+    /*
+      ✅ YTD LOGIC ENDS HERE
+    */
 
     const payrollRun = await PayrollRun.create({
       employee: employee._id,
@@ -61,6 +115,15 @@ router.post('/run', async (req, res) => {
       totalTaxes,
       notes,
       payDate,
+
+      // Save YTD values into this run
+      ytdGrossPay,
+      ytdNetPay,
+      ytdFederalIncomeTax,
+      ytdStateIncomeTax,
+      ytdSocialSecurity,
+      ytdMedicare,
+      ytdTotalTaxes,
     });
 
     // filename: nwf_<last4 of Emp_ID>_<YYYY-MM-DD>.pdf
