@@ -1,43 +1,53 @@
-const EmployeeSchema = new mongoose.Schema({
-  employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
+async function generateExternalEmployeeId() {
+  // Simple sequential-ish generator: Emp ID 01001, 01002, ...
+  const count = await Employee.countDocuments();
+  const num = 10001 + count; // start at 10001 so it looks “real”
+  return `Emp ID ${String(num).padStart(5, '0')}`;
+}
 
-  firstName: String,
-  lastName: String,
-  email: String,
-  phone: String,
+router.post('/', async (req, res) => {
+  try {
+    const {
+      firstName, lastName, email, phone,
+      companyName, hourlyRate,
+      address, dateOfBirth, ssnLast4,
+      payMethod, directDeposit,
+      federalWithholdingRate, stateWithholdingRate,
+    } = req.body;
 
-  // Auto-generated external ID like "Emp ID 01002"
-  externalEmployeeId: { type: String, unique: true },
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'firstName, lastName and email are required.' });
+    }
 
-  // Onboarding data
-  address: {
-    line1: String,
-    line2: String,
-    city: String,
-    state: String,
-    zip: String,
-  },
-  dateOfBirth: Date,
-  ssnLast4: String,          // only last 4, do NOT store full SSN in plain text
-  payMethod: {
-    type: String,
-    enum: ['direct_deposit', 'paper_check'],
-    default: 'direct_deposit',
-  },
-  directDeposit: {
-    bankName: String,
-    routingLast4: String,
-    accountLast4: String,
-    accountType: { type: String, enum: ['checking', 'savings'], default: 'checking' },
-  },
+    const existing = await Employee.findOne({ email });
+    if (existing) return res.status(400).json({ error: 'Email already in use.' });
 
-  companyName: String,
-  hourlyRate: { type: Number, default: 0 },
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+    const externalEmployeeId = await generateExternalEmployeeId();
 
-  // Withholding percentages (per pay period)
-  federalWithholdingRate: { type: Number, default: 0.18 }, // 18% default
-  stateWithholdingRate:   { type: Number, default: 0.05 }, // 5% GA default
+    const employee = await Employee.create({
+      firstName,
+      lastName,
+      email,
+      phone,
+      address,
+      dateOfBirth,
+      ssnLast4,
+      payMethod,
+      directDeposit,
+      companyName: companyName || 'NWF Payroll Client',
+      hourlyRate: hourlyRate || 0,
+      federalWithholdingRate,
+      stateWithholdingRate,
+      externalEmployeeId,
+      role: 'employee',
+      passwordHash,
+    });
 
-  role: { type: String, enum: ['employee'], default: 'employee' },
-  passwordHash: String,
-}, { timestamps: true });
+    // sendWelcomeEmail(...) – keep as you had
+    res.status(201).json({ employee, tempPassword });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
