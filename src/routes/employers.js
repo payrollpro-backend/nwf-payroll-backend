@@ -1,143 +1,140 @@
-// src/routes/employers.js
-const express = require('express');
-// ✅ match your actual file name employers.js
-const Employer = require('../models/employers');
+// routes/employers.js
 
+const express = require('express');
+
+// IMPORTANT: change this line depending on your actual file name
+// If your model file is Employer.js use:
+const Employer = require('../models/Employer');
+// If your model file is employers.js use:
+// const Employer = require('../models/employers');
 
 const router = express.Router();
 
 /**
  * POST /api/employers/signup
- * Employer signup (public-facing form)
+ * Public: Employer submits onboarding info
  */
 router.post('/signup', async (req, res) => {
   try {
     const {
       companyName,
       ein,
-      email,
-      phone,
-      addressLine1,
-      addressLine2,
-      city,
-      state,
-      postalCode,
-      country,
-      documents, // optional: [{ url, label }]
+      companyEmail,
+      address,
+      documents
     } = req.body;
 
-    if (!companyName || !ein || !email) {
-      return res.status(400).json({ error: 'companyName, ein, and email are required' });
+    if (!companyName) {
+      return res.status(400).json({ error: "companyName is required" });
     }
 
     const employer = await Employer.create({
       companyName,
       ein,
-      email,
-      phone,
-      addressLine1,
-      addressLine2,
-      city,
-      state,
-      postalCode,
-      country,
+      companyEmail,
+      address: {
+        line1: address?.line1 || "",
+        line2: address?.line2 || "",
+        city: address?.city || "",
+        state: address?.state || "",
+        zip: address?.zip || "",
+      },
       documents: Array.isArray(documents) ? documents : [],
-      status: 'pending', // waiting for your approval
+      status: "pending",
     });
 
     res.status(201).json(employer);
   } catch (err) {
-    console.error('employer signup error:', err);
-    res.status(500).json({ error: err.message || 'Employer signup failed' });
+    console.error("Employer signup error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
+
 
 /**
  * GET /api/employers
- * List ALL employers (admin view)
+ * Admin: list all employers
  */
 router.get('/', async (req, res) => {
   try {
-    const employers = await Employer.find().sort({ createdAt: -1 }).lean();
+    const employers = await Employer.find()
+      .sort({ createdAt: -1 })
+      .lean();
+
     res.json(employers);
   } catch (err) {
-    console.error('list employers error:', err);
-    res.status(500).json({ error: err.message || 'Could not load employers' });
+    console.error("Get employers error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
+
 /**
  * GET /api/employers/pending
- * List only employers that are pending verification
+ * Admin: list pending employers
  */
 router.get('/pending', async (req, res) => {
   try {
-    const pending = await Employer.find({
-      $or: [{ status: 'pending' }, { verificationStatus: 'pending' }, { status: { $exists: false } }],
-    })
+    const pending = await Employer.find({ status: "pending" })
       .sort({ createdAt: 1 })
       .lean();
 
     res.json(pending);
   } catch (err) {
-    console.error('pending employers error:', err);
-    res.status(500).json({ error: err.message || 'Could not load pending employers' });
+    console.error("Get pending employers error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
+
 /**
  * POST /api/employers/:id/approve
- * Approve an employer (used by verification.html)
+ * Admin: approve employer
  */
 router.post('/:id/approve', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const employer = await Employer.findByIdAndUpdate(
+    const updated = await Employer.findByIdAndUpdate(
       id,
-      {
-        status: 'active',
-        verificationStatus: 'verified',
-      },
+      { status: "approved" },
       { new: true }
     );
 
-    if (!employer) {
-      return res.status(404).json({ error: 'Employer not found' });
+    if (!updated) {
+      return res.status(404).json({ error: "Employer not found" });
     }
 
-    res.json(employer);
+    res.json(updated);
   } catch (err) {
-    console.error('approve employer error:', err);
-    res.status(500).json({ error: err.message || 'Could not approve employer' });
+    console.error("Approve employer error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
+
 /**
  * POST /api/employers/:id/reject
- * Reject an employer (used by verification.html)
+ * Admin: reject employer
  */
 router.post('/:id/reject', async (req, res) => {
   try {
     const { id } = req.params;
 
-    const employer = await Employer.findByIdAndUpdate(
+    const updated = await Employer.findByIdAndUpdate(
       id,
-      {
-        status: 'disabled',
-        verificationStatus: 'rejected',
-      },
+      { status: "rejected" },
       { new: true }
     );
 
-    if (!employer) {
-      return res.status(404).json({ error: 'Employer not found' });
+    if (!updated) {
+      return res.status(404).json({ error: "Employer not found" });
     }
 
-    res.json(employer);
+    res.json(updated);
   } catch (err) {
-    console.error('reject employer error:', err);
-    res.status(500).json({ error: err.message || 'Could not reject employer' });
+    console.error("Reject employer error:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 
