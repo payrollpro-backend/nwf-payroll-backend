@@ -1,43 +1,76 @@
 const mongoose = require('mongoose');
 
-const EmployeeSchema = new mongoose.Schema({
-  // keep your existing fields:
-  firstName: { type: String, required: true },
-  lastName:  { type: String, required: true },
-  email:     { type: String, required: true },
-  // ...whatever you already had here (externalEmployeeId, hourlyRate, etc)...
+// Utility for generating employee IDs if you use that feature
+function generateEmployeeId() {
+  const prefix = 'EMP';
+  const random = Math.floor(100000 + Math.random() * 900000); // 6-digit number
+  return `${prefix}${random}`;
+}
 
-  // add NEW fields here (instead of making a second schema):
+const EmployeeSchema = new mongoose.Schema(
+  {
+    // ================================
+    // BASIC EMPLOYEE INFORMATION
+    // ================================
+    firstName: { type: String, required: true },
+    lastName:  { type: String, required: true },
+    email:     { type: String, required: true },
 
-  address: {
-    line1:      { type: String },
-    city:       { type: String },
-    state:      { type: String },
-    postalCode: { type: String },
+    phone:     { type: String },
+    ssn:       { type: String },    // if you’re storing SSN encrypted, update later
+
+    // EMPLOYEE ID
+    externalEmployeeId: {
+      type: String,
+      default: generateEmployeeId,
+    },
+
+    // ================================
+    // ADDRESS INFORMATION
+    // ================================
+    address: {
+      line1:      { type: String },
+      city:       { type: String },
+      state:      { type: String },
+      postalCode: { type: String },
+    },
+
+    // ================================
+    // EMPLOYMENT DETAILS
+    // ================================
+    startDate: { type: Date },
+
+    payFrequency: {
+      type: String,
+      enum: ['weekly', 'biweekly', 'monthly'],
+      default: 'biweekly',
+    },
+
+    hourlyRate: { type: Number, required: true },
+
+    // ================================
+    // TAX RATES
+    // ================================
+    federalWithholdingRate: { type: Number, default: 0.18 },
+    stateWithholdingRate:   { type: Number, default: 0.05 },
+
+    // ================================
+    // PORTAL ACCESS ACCOUNTING
+    // ================================
+    hasPortalAccount: {
+      type: Boolean,
+      default: false,
+    },
+
+    portalUserId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      default: null,
+    },
   },
-
-  startDate: {
-    type: Date,
-  },
-
-  payFrequency: {
-    type: String,
-    enum: ['weekly', 'biweekly', 'monthly'],
-    default: 'biweekly',
-  },
-
-  hasPortalAccount: {
-    type: Boolean,
-    default: false,
-  },
-
-  portalUserId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    default: null,
-  },
-}, {
-  timestamps: true, // if you already had this, keep it
-});
+  {
+    timestamps: true,
+  }
+);
 
 module.exports = mongoose.model('Employee', EmployeeSchema);
