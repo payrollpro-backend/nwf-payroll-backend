@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Employee = require('../models/Employee');
+const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
 const router = express.Router();
 
