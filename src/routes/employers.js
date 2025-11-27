@@ -1,6 +1,8 @@
 // src/routes/employers.js
 const express = require('express');
-const Employer = require('../models/Employer'); // make sure this path matches your model
+// ✅ match your actual file name employers.js
+const Employer = require('../models/employers');
+
 
 const router = express.Router();
 
