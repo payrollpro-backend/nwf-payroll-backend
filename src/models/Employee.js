@@ -46,7 +46,8 @@ const EmployeeSchema = new mongoose.Schema(
       default: 'biweekly',
     },
 
-    hourlyRate: { type: Number, required: true },
+    hourlyRate: { type: Number, required: false, default: 0 },
+
 
     // ================================
     // TAX RATES
