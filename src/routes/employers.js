@@ -1,19 +1,13 @@
 // src/routes/employers.js
 
 const express = require('express');
-const mongoose = require('mongoose');
-
-// ✅ Load the schema file for side-effect (it registers the model with Mongoose)
-require('../models/employers');
-
-// ✅ Now safely grab the model by name
-const Employer = mongoose.model('Employer');
+const Employer = require('../models/Employer'); // 👈 IMPORTANT: matches Employer.js
 
 const router = express.Router();
 
 /**
  * POST /api/employers/signup
- * Public: Employer submits onboarding info
+ * Employer submits signup form
  */
 router.post('/signup', async (req, res) => {
   try {
@@ -53,14 +47,11 @@ router.post('/signup', async (req, res) => {
 
 /**
  * GET /api/employers
- * Admin: list all employers
+ * Admin – Get ALL employers
  */
 router.get('/', async (req, res) => {
   try {
-    const employers = await Employer.find()
-      .sort({ createdAt: -1 })
-      .lean();
-
+    const employers = await Employer.find().sort({ createdAt: -1 }).lean();
     res.json(employers);
   } catch (err) {
     console.error('Get employers error:', err);
@@ -70,7 +61,7 @@ router.get('/', async (req, res) => {
 
 /**
  * GET /api/employers/pending
- * Admin: list pending employers
+ * Admin – Get employers waiting for approval
  */
 router.get('/pending', async (req, res) => {
   try {
@@ -87,7 +78,7 @@ router.get('/pending', async (req, res) => {
 
 /**
  * POST /api/employers/:id/approve
- * Admin: approve employer
+ * Mark employer as approved
  */
 router.post('/:id/approve', async (req, res) => {
   try {
@@ -96,7 +87,7 @@ router.post('/:id/approve', async (req, res) => {
     const updated = await Employer.findByIdAndUpdate(
       id,
       { status: 'approved' },
-      { new: true },
+      { new: true }
     );
 
     if (!updated) {
@@ -112,7 +103,7 @@ router.post('/:id/approve', async (req, res) => {
 
 /**
  * POST /api/employers/:id/reject
- * Admin: reject employer
+ * Mark employer as rejected
  */
 router.post('/:id/reject', async (req, res) => {
   try {
@@ -121,7 +112,7 @@ router.post('/:id/reject', async (req, res) => {
     const updated = await Employer.findByIdAndUpdate(
       id,
       { status: 'rejected' },
-      { new: true },
+      { new: true }
     );
 
     if (!updated) {
