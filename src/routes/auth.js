@@ -1,4 +1,3 @@
-// src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -25,9 +24,7 @@ function signToken(user) {
 }
 
 /**
- * Create first admin (one time)
- * You can call this via POST /api/auth/admin-register if you want a different admin,
- * but we’re ALSO auto-creating a default in server.js.
+ * Create admin via API (optional, one-time use)
  */
 router.post('/admin-register', async (req, res) => {
   try {
@@ -126,7 +123,9 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * TEMP: Admin password reset helper
+ * Admin password reset helper
+ * - If user does not exist: create them as ADMIN and set password
+ * - If user exists: force role=admin and update password
  */
 router.patch('/admin-reset-password', async (req, res) => {
   try {
@@ -138,16 +137,24 @@ router.patch('/admin-reset-password', async (req, res) => {
         .json({ error: 'Email and newPassword are required' });
     }
 
-    const admin = await Employee.findOne({ email });
+    let admin = await Employee.findOne({ email });
 
     if (!admin) {
-      return res.status(404).json({ error: 'Admin not found' });
+      // Create new admin
+      const passwordHash = await bcrypt.hash(newPassword, 10);
+      admin = await Employee.create({
+        firstName: 'NWF',
+        lastName: 'Admin',
+        email,
+        passwordHash,
+        role: 'admin',
+      });
+
+      return res.json({ message: 'Admin created & password set' });
     }
 
-    if (admin.role !== 'admin') {
-      return res.status(400).json({ error: 'User is not an admin account' });
-    }
-
+    // Force this user to be admin and reset password
+    admin.role = 'admin';
     admin.passwordHash = await bcrypt.hash(newPassword, 10);
     await admin.save();
 
