@@ -1,15 +1,10 @@
-// src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 
 /**
- * Basic authentication middleware.
- * Checks for:
- * - Bearer token
- * - Valid signature
- * - Valid expiration
- * - Attaches user ID + role to req.user
+ * Basic JWT auth middleware.
+ * Looks for "Authorization: Bearer <token>"
  */
-module.exports = function auth(req, res, next) {
+function auth(req, res, next) {
   try {
     const header = req.headers.authorization || '';
 
@@ -18,23 +13,37 @@ module.exports = function auth(req, res, next) {
     }
 
     const token = header.split(' ')[1];
-
     if (!token) {
       return res.status(401).json({ error: 'Missing token' });
     }
 
-    // Verify the token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Attach decoded user info to request
     req.user = {
       id: decoded.id,
       role: decoded.role,
+      employerId: decoded.employerId || null,
     };
 
     next();
   } catch (err) {
-    console.error('Auth middleware error:', err);
+    console.error('Auth middleware error:', err.message);
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
-};
+}
+
+function adminOnly(req, res, next) {
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+function employerOnly(req, res, next) {
+  if (!req.user || (req.user.role !== 'employer' && req.user.role !== 'admin')) {
+    return res.status(403).json({ error: 'Employer access required' });
+  }
+  next();
+}
+
+module.exports = { auth, adminOnly, employerOnly };
