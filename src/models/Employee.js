@@ -1,5 +1,32 @@
 const mongoose = require('mongoose');
+const EmployeeSchema = new mongoose.Schema({
+  // ...existing fields...
 
+  address: {
+    line1: { type: String },
+    city: { type: String },
+    state: { type: String },
+    postalCode: { type: String }
+  },
+
+  startDate: {
+    type: Date,
+    required: false // you can flip to true once you’ve updated data
+  },
+
+  payFrequency: {
+    type: String,
+    enum: ['weekly', 'biweekly', 'monthly'],
+    default: 'biweekly'
+  },
+
+  hourlyRate: {
+    type: Number,
+    required: true
+  },
+
+  // existing: externalEmployeeId, role, etc...
+});
 const EmployeeSchema = new mongoose.Schema({
   // Which employer they belong to (null for NWF internal admin)
   employer: { type: mongoose.Schema.Types.ObjectId, ref: 'Employer', default: null },
