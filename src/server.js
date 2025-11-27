@@ -35,6 +35,28 @@ app.use('/api/paystubs', paystubRoutes);
 
 // DB + SERVER START
 const mongoUri = process.env.MONGO_URI;
+async function ensureDefaultAdmin() {
+  const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@nwfpayroll.com';
+  const password = process.env.DEFAULT_ADMIN_PASSWORD || 'StrongPass123!';
+
+  const existing = await Employee.findOne({ email, role: 'admin' });
+  if (existing) {
+    console.log('✅ Default admin already exists:', email);
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  await Employee.create({
+    firstName: 'NWF',
+    lastName: 'Admin',
+    email,
+    passwordHash,
+    role: 'admin',
+  });
+
+  console.log('✅ Created default admin:', email, 'password:', password);
+}
 
 mongoose
   .connect(mongoUri)
