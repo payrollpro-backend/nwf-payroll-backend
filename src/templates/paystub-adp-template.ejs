@@ -11,14 +11,39 @@
 
     body {
       margin: 0;
-      padding: 16px;
+      padding: 0;
       font-size: 11px;
       color: #222;
     }
 
     .page {
-      border: 1px solid #ccc;
-      padding: 16px;
+      position: relative;
+      width: 100%;
+      min-height: 3300px; /* tall enough for a full letter page */
+      overflow: hidden;
+    }
+
+    .page-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+
+    .page-content {
+      position: relative;
+      z-index: 1;
+      padding: 70px 70px 40px 70px; /* top padding so content sits nicely under the logo band */
+    }
+
+    .card {
+      border: 1px solid #d0d0d0;
+      background-color: rgba(255, 255, 255, 0.96);
+      padding: 14px 14px 10px;
+      margin-bottom: 14px;
     }
 
     .header-row {
@@ -26,7 +51,7 @@
       justify-content: space-between;
       align-items: flex-start;
       border-bottom: 2px solid #444;
-      padding-bottom: 8px;
+      padding-bottom: 6px;
       margin-bottom: 8px;
     }
 
@@ -72,6 +97,16 @@
     .netpay-big {
       font-size: 15px;
       font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .check-line {
+      margin: 10px 0 4px;
+      border-top: 1px dashed #aaa;
+    }
+
+    .payee-line {
+      font-size: 10px;
       margin-top: 4px;
     }
 
@@ -156,6 +191,7 @@
       flex: 1;
       border: 1px solid #ddd;
       padding: 4px 6px;
+      background-color: rgba(255, 255, 255, 0.95);
     }
 
     .ytd-title {
@@ -176,212 +212,186 @@
       font-size: 8px;
       color: #777;
     }
-
-    .check-line {
-      margin: 12px 0 4px;
-      border-top: 1px dashed #aaa;
-    }
-
-    .payee-line {
-      font-size: 10px;
-      margin-top: 4px;
-    }
   </style>
 </head>
 <body>
   <div class="page">
-    <!-- Header / Check Summary -->
-    <div class="header-row">
-      <div class="company-block">
-        <div class="company-name">NWF PAYROLL SERVICES</div>
-        <div class="company-sub">Payroll for Small Landlords & Self-Employed</div>
-        <div class="company-address">
-          NSE MANAGEMENT INC<br/>
-          4711 Nutmeg Way SW<br/>
-          Lilburn, GA 30047
-        </div>
-      </div>
-      <div class="check-block">
-        <div>
-          <span class="label">Check Date</span><br/>
-          <span class="value"><%= payDateFormatted %></span>
-        </div>
-        <div style="margin-top: 4px;">
-          <span class="label">Check Number</span><br/>
-          <span class="value"><%= checkNumber %></span>
-        </div>
-        <div class="netpay-big">
-          NET PAY: $<%= netPay.toFixed(2) %>
-        </div>
-      </div>
-    </div
-.page {
-  position: relative;
-  width: 100%;
-  min-height: 3300px; /* full letter-size page height in px at 300dpi */
-  overflow: hidden;
-}
+    <!-- Background image from www.nwfpayroll.com -->
+    <img src="<%= backgroundUrl %>" class="page-bg" />
 
-.page-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  z-index: 0;
-}
-
-.page-content {
-  position: relative;
-  z-index: 1;
-  padding: 60px 70px; /* adjust so text doesn’t clash with background edges */
-}
-
-
-    <!-- Payee line (check-style) -->
-    <div class="check-line"></div>
-    <div class="payee-line">
-      Pay to the order of <strong><%= employeeFullName %></strong>
-      &nbsp;&nbsp; $<%= netPay.toFixed(2) %>
-    </div>
-
-    <!-- Employee / Pay Info -->
-    <div class="section">
-      <div class="section-header">Employee &amp; Pay Information</div>
-      <div class="section-body">
-        <div class="info-grid">
-          <div class="info-label">Employee Name</div>
-          <div><%= employeeFullName %></div>
-
-          <div class="info-label">Employee ID</div>
-          <div><%= externalEmployeeId || '—' %></div>
-
-          <div class="info-label">Email</div>
-          <div><%= employeeEmail %></div>
-
-          <div class="info-label">Pay Period</div>
-          <div><%= payPeriodLabel %></div>
-
-          <div class="info-label">Bank Name</div>
-          <div><%= bankName %></div>
-
-          <div class="info-label">Account Last 4</div>
-          <div><%= bankAccountLast4 || '—' %></div>
-
-          <div class="info-label">Verification Code</div>
-          <div><%= verificationCode %></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Earnings + Deductions -->
-    <div class="section">
-      <div class="section-header">Earnings &amp; Deductions</div>
-      <div class="section-body">
-        <div class="two-col-row">
-          <!-- Earnings -->
-          <div class="col">
-            <table>
-              <thead>
-                <tr>
-                  <th>Earnings</th>
-                  <th>Rate</th>
-                  <th>Hours</th>
-                  <th>Current</th>
-                  <th>YTD</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Regular Pay</td>
-                  <td><%= regularRateFormatted %></td>
-                  <td><%= regularHoursFormatted %></td>
-                  <td>$<%= grossPay.toFixed(2) %></td>
-                  <td>$<%= ytdGross.toFixed(2) %></td>
-                </tr>
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colspan="3">Total Earnings</td>
-                  <td>$<%= grossPay.toFixed(2) %></td>
-                  <td>$<%= ytdGross.toFixed(2) %></td>
-                </tr>
-              </tfoot>
-            </table>
+    <div class="page-content">
+      <!-- MAIN PAYSTUB CARD -->
+      <div class="card">
+        <!-- Header / Check Summary -->
+        <div class="header-row">
+          <div class="company-block">
+            <div class="company-name">NSE MANAGEMENT INC</div>
+            <div class="company-sub">PAYROLL SERVICES BY NWF PAYROLL</div>
+            <div class="company-address">
+              4711 Nutmeg Way SW<br/>
+              Lilburn, GA 30047
+            </div>
           </div>
-
-          <!-- Deductions -->
-          <div class="col">
-            <table>
-              <thead>
-                <tr>
-                  <th>Deductions</th>
-                  <th>Current</th>
-                  <th>YTD</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Federal Income Tax</td>
-                  <td>$<%= federalIncomeTax.toFixed(2) %></td>
-                  <td>$<%= ytdFederalIncomeTax.toFixed(2) %></td>
-                </tr>
-                <tr>
-                  <td>Social Security</td>
-                  <td>$<%= socialSecurity.toFixed(2) %></td>
-                  <td>$<%= ytdSocialSecurity.toFixed(2) %></td>
-                </tr>
-                <tr>
-                  <td>Medicare</td>
-                  <td>$<%= medicare.toFixed(2) %></td>
-                  <td>$<%= ytdMedicare.toFixed(2) %></td>
-                </tr>
-                <tr>
-                  <td>State Income Tax</td>
-                  <td>$<%= stateIncomeTax.toFixed(2) %></td>
-                  <td>$<%= ytdStateIncomeTax.toFixed(2) %></td>
-                </tr>
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td>Total Taxes</td>
-                  <td>$<%= totalTaxes.toFixed(2) %></td>
-                  <td>$<%= ytdTotalTaxes.toFixed(2) %></td>
-                </tr>
-              </tfoot>
-            </table>
+          <div class="check-block">
+            <div>
+              <span class="label">Check Date</span><br/>
+              <span class="value"><%= payDateFormatted %></span>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="label">Check Number</span><br/>
+              <span class="value"><%= checkNumber %></span>
+            </div>
+            <div class="netpay-big">
+              NET PAY: $<%= (netPay || 0).toFixed(2) %>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- YTD Summary -->
-    <div class="section">
-      <div class="section-header">Year-to-Date Summary</div>
-      <div class="section-body">
-        <div class="ytd-summary">
-          <div class="ytd-box">
-            <div class="ytd-title">YTD Gross Pay</div>
-            <div class="ytd-value">$<%= ytdGross.toFixed(2) %></div>
-          </div>
-          <div class="ytd-box">
-            <div class="ytd-title">YTD Total Taxes</div>
-            <div class="ytd-value">$<%= ytdTotalTaxes.toFixed(2) %></div>
-          </div>
-          <div class="ytd-box">
-            <div class="ytd-title">YTD Net Pay</div>
-            <div class="ytd-value">$<%= ytdNet.toFixed(2) %></div>
+        <!-- Payee line (check-style) -->
+        <div class="check-line"></div>
+        <div class="payee-line">
+          Pay to the order of <strong><%= employeeFullName %></strong>
+          &nbsp;&nbsp; $<%= (netPay || 0).toFixed(2) %>
+        </div>
+
+        <!-- Employee / Pay Info -->
+        <div class="section" style="margin-top: 8px;">
+          <div class="section-header">Employee &amp; Pay Information</div>
+          <div class="section-body">
+            <div class="info-grid">
+              <div class="info-label">Employee Name</div>
+              <div><%= employeeFullName %></div>
+
+              <div class="info-label">Employee ID</div>
+              <div><%= externalEmployeeId || '—' %></div>
+
+              <div class="info-label">Email</div>
+              <div><%= employeeEmail %></div>
+
+              <div class="info-label">Pay Period</div>
+              <div><%= payPeriodLabel %></div>
+
+              <div class="info-label">Bank Name</div>
+              <div><%= bankName %></div>
+
+              <div class="info-label">Account Last 4</div>
+              <div><%= bankAccountLast4 || '—' %></div>
+
+              <div class="info-label">Verification Code</div>
+              <div><%= verificationCode %></div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Footnote -->
-    <div class="footnote">
-      This statement has been prepared by NWF Payroll Services. Verify this paystub at
-      https://nwf-payroll-backend.onrender.com/api/verify-paystub/<%= verificationCode %>
-    </div>
-  </div>
+        <!-- Earnings + Deductions -->
+        <div class="section">
+          <div class="section-header">Earnings &amp; Deductions</div>
+          <div class="section-body">
+            <div class="two-col-row">
+              <!-- Earnings -->
+              <div class="col">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Earnings</th>
+                      <th>Rate</th>
+                      <th>Hours</th>
+                      <th>Current</th>
+                      <th>YTD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Regular Pay</td>
+                      <td><%= regularRateFormatted %></td>
+                      <td><%= regularHoursFormatted %></td>
+                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="3">Total Earnings</td>
+                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <!-- Deductions -->
+              <div class="col">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Deductions</th>
+                      <th>Current</th>
+                      <th>YTD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Federal Income Tax</td>
+                      <td>$<%= (federalIncomeTax || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdFederalIncomeTax || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>Social Security</td>
+                      <td>$<%= (socialSecurity || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdSocialSecurity || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>Medicare</td>
+                      <td>$<%= (medicare || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdMedicare || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>State Income Tax</td>
+                      <td>$<%= (stateIncomeTax || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdStateIncomeTax || 0).toFixed(2) %></td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Total Taxes</td>
+                      <td>$<%= (totalTaxes || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdTotalTaxes || 0).toFixed(2) %></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- YTD Summary -->
+        <div class="section">
+          <div class="section-header">Year-to-Date Summary</div>
+          <div class="section-body">
+            <div class="ytd-summary">
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Gross Pay</div>
+                <div class="ytd-value">$<%= (ytdGross || 0).toFixed(2) %></div>
+              </div>
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Total Taxes</div>
+                <div class="ytd-value">$<%= (ytdTotalTaxes || 0).toFixed(2) %></div>
+              </div>
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Net Pay</div>
+                <div class="ytd-value">$<%= (ytdNet || 0).toFixed(2) %></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footnote -->
+        <div class="footnote">
+          This statement has been prepared by NWF Payroll Services. Verify this paystub at
+          https://nwf-payroll-backend.onrender.com/api/verify-paystub/<%= verificationCode %>
+        </div>
+      </div><!-- /.card -->
+    </div><!-- /.page-content -->
+  </div><!-- /.page -->
 </body>
 </html>
