@@ -4,8 +4,6 @@ const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
-
-// 🔹 NEW: import the payroll engine (make sure src/payrollEngine exists)
 const { calculatePaycheck } = require('../payrollEngine');
 
 const router = express.Router();
@@ -14,8 +12,6 @@ const router = express.Router();
  * POST /api/payroll/run
  * Create a single payroll run + paystub for one employee,
  * including YTD calculations based on calendar year + hire date.
- *
- * Now uses the NWF payroll engine for federal/FICA/GA state taxes.
  */
 router.post('/run', async (req, res) => {
   try {
@@ -99,9 +95,8 @@ router.post('/run', async (req, res) => {
 
     // ---------- FEED DATA INTO THE NEW PAYROLL ENGINE ----------
 
-    // Hours / rate:
     const hours = Number(hoursWorked) || 0;
-    // Prefer stored hourlyRate; if not present but we have hours, derive from gross
+
     const rate =
       typeof employee.hourlyRate === 'number' && employee.hourlyRate > 0
         ? employee.hourlyRate
@@ -109,28 +104,21 @@ router.post('/run', async (req, res) => {
         ? gross / hours
         : 0;
 
-    // Pay frequency – default to biweekly if not on employee
     const payFrequency = employee.payFrequency || 'biweekly';
-
-    // Filing status – default to single if not on employee
     const filingStatus = employee.filingStatus || 'single';
 
-    // State – try to infer from employee fields, default to GA for now
     const stateCode =
       employee.stateCode ||
       employee.state ||
       (employee.address && employee.address.state) ||
       'GA';
 
-    // Approximate YTD Social Security wages for cap logic:
-    // prev.ss is YTD SS TAX; convert to wages by dividing by 6.2%
+    // Approximate YTD Social Security wages for cap logic
     const ytdSocialSecurityWages =
       prev.ss && prev.ss > 0 ? prev.ss / 0.062 : 0;
 
-    // If you later track real pre-tax (401k, health), pass it here
-    const preTaxDeductions = 0;
+    const preTaxDeductions = 0; // extend later when you add 401k/health, etc.
 
-    // 🔹 Call the new engine
     const engineResult = calculatePaycheck({
       employeeId: employee._id.toString(),
       hours,
@@ -142,7 +130,6 @@ router.post('/run', async (req, res) => {
       preTaxDeductions,
     });
 
-    // engineResult contains: { gross, deductions: {...}, netPay }
     const {
       deductions: {
         federalIncomeTax,
@@ -170,7 +157,6 @@ router.post('/run', async (req, res) => {
       hoursWorked: hours,
       hourlyRate: rate,
 
-      // Use the original gross input (aligned with engineResult.gross)
       grossPay: gross,
       netPay,
       federalIncomeTax,
@@ -193,9 +179,6 @@ router.post('/run', async (req, res) => {
 
     // ---------- Create Paystub record ----------
 
-       // ---------- Create Paystub record ----------
-
-    // Prefer externalEmployeeId if you’re using that Emp_ID_XXXXXXXX style
     const baseEmpId =
       employee.externalEmployeeId ||
       employee.employeeId ||
@@ -209,7 +192,6 @@ router.post('/run', async (req, res) => {
       payrollRun: payrollRun._id,
       payDate: payDateObj,
       fileName,
-      // copy YTD onto the paystub so it’s frozen there too
       ytdGross: payrollRun.ytdGross,
       ytdNet: payrollRun.ytdNet,
       ytdFederalIncomeTax: payrollRun.ytdFederalIncomeTax,
@@ -218,3 +200,41 @@ router.post('/run', async (req, res) => {
       ytdMedicare: payrollRun.ytdMedicare,
       ytdTotalTaxes: payrollRun.ytdTotalTaxes,
     });
+
+    res.status(201).json({ payrollRun, paystub });
+  } catch (err) {
+    console.error('payroll run error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * Shared handler to list payroll runs
+ */
+async function listRunsHandler(req, res) {
+  try {
+    const runs = await PayrollRun.find()
+      .populate('employee')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(runs);
+  } catch (err) {
+    console.error('list payroll runs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+}
+
+/**
+ * GET /api/payroll
+ * List all payroll runs
+ */
+router.get('/', listRunsHandler);
+
+/**
+ * GET /api/payroll/runs
+ * Alias – in case frontend calls /runs
+ */
+router.get('/runs', listRunsHandler);
+
+module.exports = router;
