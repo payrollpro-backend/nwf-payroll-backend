@@ -336,6 +336,14 @@ router.get('/:id/pdf', async (req, res) => {
       stub.fileName || `nwf_${externalEmployeeId || 'employee'}_${payDateStr}.pdf`;
 
     const formatNum = (n) => Number(n || 0).toFixed(2);
+        const verificationCode = stub.verificationCode || '';
+    const baseVerifyUrl =
+      process.env.NWF_VERIFY_BASE_URL ||
+      'https://nwf-payroll-backend.onrender.com/api/verify-paystub';
+    const verificationUrl = verificationCode
+      ? `${baseVerifyUrl}/${verificationCode}`
+      : baseVerifyUrl;
+
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
