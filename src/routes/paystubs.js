@@ -1,237 +1,141 @@
-// routes/paystubs.js (example)
+// src/routes/paystubs.js
+
 const express = require('express');
-const PDFDocument = require('pdfkit');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
+const { requireAuth } = require('../middleware/auth');
+const { generatePaystubPdf } = require('../utils/paystubPdf');
 
 const router = express.Router();
 
-router.get('/:paystubId/pdf', async (req, res) => {
+/**
+ * GET /api/paystubs/employee/:employeeId
+ * List paystubs for a specific employee (admin or that employee).
+ */
+router.get('/employee/:employeeId', requireAuth, async (req, res) => {
   try {
-    const paystub = await Paystub.findById(req.params.paystubId)
+    const requestedId = req.params.employeeId;
+    const user = req.user;
+
+    // Admin can see all; employee can only see their own
+    if (user.role !== 'admin' && user._id.toString() !== requestedId) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    const stubs = await Paystub.find({ employee: requestedId })
+      .sort({ payDate: -1 })
+      .populate('payrollRun')
+      .lean();
+
+    const response = stubs.map((stub) => {
+      const run = stub.payrollRun || {};
+      return {
+        id: stub._id,
+        payDate: stub.payDate || run.payDate,
+        fileName: stub.fileName,
+        grossPay: run.grossPay || 0,
+        netPay: run.netPay || 0,
+      };
+    });
+
+    res.json(response);
+  } catch (err) {
+    console.error('List paystubs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/paystubs/:id/pdf
+ * Return a PDF that visually matches the sample stub.
+ * Computes YTD based on all runs in the SAME YEAR up to this pay date.
+ */
+router.get('/:id/pdf', requireAuth, async (req, res) => {
+  try {
+    const paystubId = req.params.id;
+
+    const paystub = await Paystub.findById(paystubId)
       .populate('employee')
       .populate('payrollRun');
 
     if (!paystub) {
-      return res.status(404).send('Paystub not found');
+      return res.status(404).json({ error: 'Paystub not found' });
+    }
+
+    const user = req.user;
+
+    // Only admin or that employee can see it
+    if (
+      user.role !== 'admin' &&
+      user._id.toString() !== paystub.employee._id.toString()
+    ) {
+      return res.status(403).json({ error: 'Forbidden' });
     }
 
     const employee = paystub.employee;
-    const pr = paystub.payrollRun;
+    const run = paystub.payrollRun;
 
-    // Create PDF
-    const doc = new PDFDocument({ margin: 40 });
+    if (!run) {
+      return res.status(400).json({ error: 'This paystub has no payroll run attached' });
+    }
 
+    // ---- YTD CALCULATION (YEAR-TO-DATE) ----
+    const payDate = new Date(paystub.payDate || run.payDate);
+    const yearStart = new Date(payDate.getFullYear(), 0, 1);
+
+    const runsThisYear = await PayrollRun.find({
+      employee: employee._id,
+      payDate: { $gte: yearStart, $lte: payDate },
+    }).lean();
+
+    let ytdGross = 0;
+    let ytdFederal = 0;
+    let ytdState = 0;
+    let ytdSS = 0;
+    let ytdMedicare = 0;
+    let ytdNet = 0;
+    let ytdTaxes = 0;
+
+    for (const r of runsThisYear) {
+      const gross = Number(r.grossPay || 0);
+      const fed = Number(r.federalIncomeTax || 0);
+      const st = Number(r.stateIncomeTax || 0);
+      const ss = Number(r.socialSecurity || 0);
+      const med = Number(r.medicare || 0);
+      const taxes =
+        Number(r.totalTaxes || 0) || fed + st + ss + med;
+      const net = Number(r.netPay || (gross - taxes));
+
+      ytdGross += gross;
+      ytdFederal += fed;
+      ytdState += st;
+      ytdSS += ss;
+      ytdMedicare += med;
+      ytdTaxes += taxes;
+      ytdNet += net;
+    }
+
+    const ytdData = {
+      gross: ytdGross,
+      federal: ytdFederal,
+      state: ytdState,
+      socialSecurity: ytdSS,
+      medicare: ytdMedicare,
+      totalTaxes: ytdTaxes,
+      net: ytdNet,
+    };
+
+    // Headers for browser
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader(
-      'Content-Disposition',
-      `inline; filename="${paystub.fileName || 'paystub.pdf'}"`
-    );
+    const safeFile =
+      paystub.fileName || `paystub_${employee._id}_${payDate.toISOString().slice(0, 10)}.pdf`;
+    res.setHeader('Content-Disposition', `inline; filename="${safeFile}"`);
 
-    doc.pipe(res);
-
-    // ============================
-    //  HEADER – Employer + Logo
-    // ============================
-    // If you have the logo on disk, you can do doc.image(...)
-    doc
-      .fontSize(14)
-      .text('NWF PAYROLL SERVICES', { align: 'left' })
-      .fontSize(10)
-      .text('NWF Property Management', { align: 'left' })
-      .text('123 Business Street', { align: 'left' })
-      .text('Atlanta, GA 30303', { align: 'left' })
-      .moveDown(1);
-
-    // Employee info on the right
-    const empName = `${employee.firstName} ${employee.lastName}`.trim();
-    const addr = employee.address || {};
-
-    doc
-      .fontSize(12)
-      .text('PAY STATEMENT', { align: 'right' })
-      .moveDown(0.5)
-      .fontSize(9)
-      .text(empName, { align: 'right' })
-      .text(addr.line1 || '', { align: 'right' })
-      .text(
-        [addr.city, addr.state, addr.postalCode].filter(Boolean).join(', '),
-        { align: 'right' }
-      )
-      .moveDown(1);
-
-    // Employee ID and period / pay dates
-    const empId = employee.externalEmployeeId || '';
-    const periodStart = pr.periodStart
-      ? new Date(pr.periodStart).toLocaleDateString()
-      : '';
-    const periodEnd = pr.periodEnd
-      ? new Date(pr.periodEnd).toLocaleDateString()
-      : '';
-    const payDate = pr.payDate
-      ? new Date(pr.payDate).toLocaleDateString()
-      : '';
-
-    doc
-      .fontSize(9)
-      .text(`Employee ID: ${empId}`, { align: 'left' })
-      .text(`Pay Period: ${periodStart} - ${periodEnd}`, { align: 'left' })
-      .text(`Pay Date: ${payDate}`, { align: 'left' })
-      .moveDown(1);
-
-    // ============================
-    //  EARNINGS SECTION
-    // ============================
-    const currentGross = pr.grossPay || 0;
-    const ytdGross = pr.ytdGrossPay || 0;
-    const currentHours = pr.hoursWorked || 0;
-    const rate = pr.hourlyRate || 0;
-
-    doc
-      .fontSize(10)
-      .text('EARNINGS', { underline: true })
-      .moveDown(0.3);
-
-    doc
-      .fontSize(9)
-      .text(
-        'Description',
-        50,
-        doc.y,
-        { continued: true }
-      )
-      .text('Hours', 200, doc.y, { continued: true })
-      .text('Rate', 260, doc.y, { continued: true })
-      .text('Current', 320, doc.y, { continued: true })
-      .text('YTD', 400, doc.y)
-      .moveDown(0.2);
-
-    doc
-      .text(
-        'Regular Pay',
-        50,
-        doc.y,
-        { continued: true }
-      )
-      .text(currentHours.toFixed(2), 200, doc.y, { continued: true })
-      .text(`$${rate.toFixed(2)}`, 260, doc.y, { continued: true })
-      .text(`$${currentGross.toFixed(2)}`, 320, doc.y, { continued: true })
-      .text(`$${ytdGross.toFixed(2)}`, 400, doc.y)
-      .moveDown(1);
-
-    // ============================
-    //  TAXES / DEDUCTIONS SECTION
-    // ============================
-    const currentFed = pr.federalIncomeTax || 0;
-    const currentState = pr.stateIncomeTax || 0;
-    const currentSS = pr.socialSecurity || 0;
-    const currentMed = pr.medicare || 0;
-    const currentTotalTaxes = pr.totalTaxes || 0;
-    const currentNet = pr.netPay || 0;
-
-    const ytdFed = pr.ytdFederalIncomeTax || 0;
-    const ytdState = pr.ytdStateIncomeTax || 0;
-    const ytdSS = pr.ytdSocialSecurity || 0;
-    const ytdMed = pr.ytdMedicare || 0;
-    const ytdTotalTaxes = pr.ytdTotalTaxes || 0;
-    const ytdNet = pr.ytdNetPay || 0;
-
-    doc
-      .fontSize(10)
-      .text('TAXES & DEDUCTIONS', { underline: true })
-      .moveDown(0.3);
-
-    doc
-      .fontSize(9)
-      .text('Description', 50, doc.y, { continued: true })
-      .text('Current', 320, doc.y, { continued: true })
-      .text('YTD', 400, doc.y)
-      .moveDown(0.2);
-
-    function line(label, current, ytd) {
-      doc
-        .text(label, 50, doc.y, { continued: true })
-        .text(`$${current.toFixed(2)}`, 320, doc.y, { continued: true })
-        .text(`$${ytd.toFixed(2)}`, 400, doc.y)
-        .moveDown(0.1);
-    }
-
-    line('Federal Income Tax', currentFed, ytdFed);
-    line('State Income Tax', currentState, ytdState);
-    line('Social Security', currentSS, ytdSS);
-    line('Medicare', currentMed, ytdMed);
-
-    doc.moveDown(0.5);
-    line('Total Taxes', currentTotalTaxes, ytdTotalTaxes);
-
-    doc.moveDown(0.8);
-    line('Net Pay', currentNet, ytdNet);
-
-    // Footer note
-    doc.moveDown(1.5);
-    doc
-      .fontSize(8)
-      .fillColor('#555555')
-      .text(
-        'This stub reflects earnings and tax information for the stated pay period and year-to-date as of the pay date.',
-        { align: 'left' }
-      );
-
-    doc.end();
+    // Generate the PDF (this writes directly to res)
+    generatePaystubPdf(res, employee, run, paystub, ytdData);
   } catch (err) {
-    console.error('paystub pdf error:', err);
-    res.status(500).send('Failed to generate paystub PDF');
-  }
-});
-// GET /api/paystubs/by-payroll/:runId
-// Return the paystub associated with a specific payroll run.
-// If you already create Paystubs when running payroll, this just finds it.
-// If not, you can extend this later to generate-on-demand.
-router.get('/by-payroll/:runId', async (req, res) => {
-  try {
-    const { runId } = req.params;
-
-    // 1) Find existing stub linked to that payroll run
-    let stub = await Paystub.findOne({ payrollRun: runId }).populate('employee payrollRun');
-
-    if (!stub) {
-      // 2) If none exists yet, try to build one from the PayrollRun + Employee
-      const payrollRun = await PayrollRun.findById(runId).populate('employee');
-      if (!payrollRun) {
-        return res.status(404).json({ error: 'Payroll run not found' });
-      }
-
-      const emp = payrollRun.employee;
-      if (!emp) {
-        return res.status(400).json({ error: 'Payroll run has no employee attached' });
-      }
-
-      // Minimal stub creation (you can expand to match your full stub schema)
-      stub = await Paystub.create({
-        employee: emp._id,
-        payrollRun: payrollRun._id,
-        employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
-        employeeExternalId: emp.externalEmployeeId || '',
-        companyName: emp.companyName || '',
-        payDate: payrollRun.payDate,
-        periodStart: payrollRun.periodStart,
-        periodEnd: payrollRun.periodEnd,
-        grossPay: payrollRun.grossPay,
-        netPay: payrollRun.netPay,
-        federalIncomeTax: payrollRun.federalIncomeTax,
-        stateIncomeTax: payrollRun.stateIncomeTax,
-        socialSecurity: payrollRun.socialSecurity,
-        medicare: payrollRun.medicare,
-        totalTaxes: payrollRun.totalTaxes,
-      });
-
-      stub = await Paystub.findById(stub._id).populate('employee payrollRun');
-    }
-
-    res.json(stub);
-  } catch (err) {
-    console.error('Get paystub by payroll run error:', err);
+    console.error('Paystub PDF error:', err);
     res.status(500).json({ error: err.message });
   }
 });
