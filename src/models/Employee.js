@@ -71,6 +71,19 @@ const EmployeeSchema = new Schema(
       default: Date.now,
     },
 
+    // 🔹 NEW: start date (front-end "startDate" field)
+    startDate: {
+      type: Date,
+      default: Date.now,
+    },
+
+    // 🔹 NEW: active / inactive status
+    status: {
+      type: String,
+      enum: ['active', 'inactive'],
+      default: 'active',
+    },
+
     // optional stored “default” tax settings for employee
     federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 for 18%
     stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05
