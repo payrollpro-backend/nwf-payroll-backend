@@ -184,5 +184,56 @@ router.get('/:paystubId/pdf', async (req, res) => {
     res.status(500).send('Failed to generate paystub PDF');
   }
 });
+// GET /api/paystubs/by-payroll/:runId
+// Return the paystub associated with a specific payroll run.
+// If you already create Paystubs when running payroll, this just finds it.
+// If not, you can extend this later to generate-on-demand.
+router.get('/by-payroll/:runId', async (req, res) => {
+  try {
+    const { runId } = req.params;
+
+    // 1) Find existing stub linked to that payroll run
+    let stub = await Paystub.findOne({ payrollRun: runId }).populate('employee payrollRun');
+
+    if (!stub) {
+      // 2) If none exists yet, try to build one from the PayrollRun + Employee
+      const payrollRun = await PayrollRun.findById(runId).populate('employee');
+      if (!payrollRun) {
+        return res.status(404).json({ error: 'Payroll run not found' });
+      }
+
+      const emp = payrollRun.employee;
+      if (!emp) {
+        return res.status(400).json({ error: 'Payroll run has no employee attached' });
+      }
+
+      // Minimal stub creation (you can expand to match your full stub schema)
+      stub = await Paystub.create({
+        employee: emp._id,
+        payrollRun: payrollRun._id,
+        employeeName: `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+        employeeExternalId: emp.externalEmployeeId || '',
+        companyName: emp.companyName || '',
+        payDate: payrollRun.payDate,
+        periodStart: payrollRun.periodStart,
+        periodEnd: payrollRun.periodEnd,
+        grossPay: payrollRun.grossPay,
+        netPay: payrollRun.netPay,
+        federalIncomeTax: payrollRun.federalIncomeTax,
+        stateIncomeTax: payrollRun.stateIncomeTax,
+        socialSecurity: payrollRun.socialSecurity,
+        medicare: payrollRun.medicare,
+        totalTaxes: payrollRun.totalTaxes,
+      });
+
+      stub = await Paystub.findById(stub._id).populate('employee payrollRun');
+    }
+
+    res.json(stub);
+  } catch (err) {
+    console.error('Get paystub by payroll run error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
