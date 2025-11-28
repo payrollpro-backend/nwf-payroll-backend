@@ -4,18 +4,20 @@ const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
+const { generatePaystubPdf } = require('../utils/paystubPdf');
 
 const router = express.Router();
 
 /**
  * GET /api/paystubs/employee/:employeeId
- * List paystubs for a specific employee (JSON only).
+ * List paystubs for a specific employee.
+ * (Public for now – you can lock it down later with middleware.)
  */
 router.get('/employee/:employeeId', async (req, res) => {
   try {
-    const employeeId = req.params.employeeId;
+    const requestedId = req.params.employeeId;
 
-    const stubs = await Paystub.find({ employee: employeeId })
+    const stubs = await Paystub.find({ employee: requestedId })
       .sort({ payDate: -1 })
       .populate('payrollRun')
       .lean();
@@ -24,11 +26,10 @@ router.get('/employee/:employeeId', async (req, res) => {
       const run = stub.payrollRun || {};
       return {
         id: stub._id,
-        employee: stub.employee,
         payDate: stub.payDate || run.payDate,
         fileName: stub.fileName,
-        grossPay: Number(run.grossPay || 0),
-        netPay: Number(run.netPay || 0),
+        grossPay: run.grossPay || 0,
+        netPay: run.netPay || 0,
       };
     });
 
@@ -40,42 +41,12 @@ router.get('/employee/:employeeId', async (req, res) => {
 });
 
 /**
- * GET /api/paystubs
- * Admin – list ALL paystubs (across all employees), newest first.
+ * GET /api/paystubs/:id/pdf
+ * Return a PDF that visually matches the sample stub.
+ * Computes YTD based on all runs in the SAME YEAR up to this pay date.
+ * (No auth check yet – you can add middleware later.)
  */
-router.get('/', async (req, res) => {
-  try {
-    const stubs = await Paystub.find()
-      .sort({ payDate: -1 })
-      .populate('employee')
-      .populate('payrollRun')
-      .lean();
-
-    const response = stubs.map((stub) => {
-      const run = stub.payrollRun || {};
-      const emp = stub.employee || {};
-      return {
-        id: stub._id,
-        employeeName: [emp.firstName, emp.lastName].filter(Boolean).join(' '),
-        employeeId: emp._id,
-        payDate: stub.payDate || run.payDate,
-        grossPay: Number(run.grossPay || 0),
-        netPay: Number(run.netPay || 0),
-      };
-    });
-
-    res.json(response);
-  } catch (err) {
-    console.error('List ALL paystubs error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * GET /api/paystubs/:id
- * Detailed JSON for a single paystub including YTD totals.
- */
-router.get('/:id', async (req, res) => {
+router.get('/:id/pdf', async (req, res) => {
   try {
     const paystubId = req.params.id;
 
@@ -91,12 +62,10 @@ router.get('/:id', async (req, res) => {
     const run = paystub.payrollRun;
 
     if (!run) {
-      return res
-        .status(400)
-        .json({ error: 'This paystub has no payroll run attached' });
+      return res.status(400).json({ error: 'This paystub has no payroll run attached' });
     }
 
-    // ---- YTD CALCULATION: all runs in SAME YEAR up to this pay date ----
+    // ---- YTD CALCULATION (YEAR-TO-DATE) ----
     const payDate = new Date(paystub.payDate || run.payDate);
     const yearStart = new Date(payDate.getFullYear(), 0, 1);
 
@@ -110,8 +79,8 @@ router.get('/:id', async (req, res) => {
     let ytdState = 0;
     let ytdSS = 0;
     let ytdMedicare = 0;
-    let ytdTaxes = 0;
     let ytdNet = 0;
+    let ytdTaxes = 0;
 
     for (const r of runsThisYear) {
       const gross = Number(r.grossPay || 0);
@@ -119,8 +88,7 @@ router.get('/:id', async (req, res) => {
       const st = Number(r.stateIncomeTax || 0);
       const ss = Number(r.socialSecurity || 0);
       const med = Number(r.medicare || 0);
-      const taxes =
-        Number(r.totalTaxes || 0) || fed + st + ss + med;
+      const taxes = Number(r.totalTaxes || 0) || fed + st + ss + med;
       const net = Number(r.netPay || (gross - taxes));
 
       ytdGross += gross;
@@ -142,21 +110,17 @@ router.get('/:id', async (req, res) => {
       net: ytdNet,
     };
 
-    res.json({
-      paystubId: paystub._id,
-      employee: {
-        id: employee._id,
-        firstName: employee.firstName,
-        lastName: employee.lastName,
-        externalEmployeeId: employee.externalEmployeeId,
-        companyName: employee.companyName,
-        address: employee.address,
-      },
-      payrollRun: run,
-      ytd: ytdData,
-    });
+    // Headers for browser
+    res.setHeader('Content-Type', 'application/pdf');
+    const safeFile =
+      paystub.fileName ||
+      `paystub_${employee._id}_${payDate.toISOString().slice(0, 10)}.pdf`;
+    res.setHeader('Content-Disposition', `inline; filename="${safeFile}"`);
+
+    // Generate the PDF (writes directly to res)
+    generatePaystubPdf(res, employee, run, paystub, ytdData);
   } catch (err) {
-    console.error('Get single paystub error:', err);
+    console.error('Paystub PDF error:', err);
     res.status(500).json({ error: err.message });
   }
 });
