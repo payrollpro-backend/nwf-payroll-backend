@@ -53,43 +53,53 @@ if (externalIdRaw && externalIdRaw.length >= 6) {
   const templatePath = path.join(__dirname, '../templates/paystub-adp-template.ejs');
 
   const templateData = {
-    // top-level info
-    employeeFullName,
-    employeeEmail: (paystub.employee.email || '').trim(),
-    externalEmployeeId: paystub.employee.externalEmployeeId || '',
-    payDateFormatted,
-    payPeriodLabel,
+  employeeFullName,
+  employeeEmail: (paystub.employee.email || '').trim(),
 
-    checkNumber: paystub.checkNumber || '',
-    bankName: paystub.bankName || '',
-    bankAccountLast4: paystub.bankAccountLast4 || '',
-    verificationCode: paystub.verificationCode || '',
+  // full + masked ID
+  externalEmployeeId: externalIdRaw,
+  maskedEmployeeId,
 
-    // money fields – default to 0 so toFixed() is safe
-    grossPay: Number(paystub.grossPay || 0),
-    netPay: Number(paystub.netPay || 0),
+  payDateFormatted,
+  payPeriodBeginFormatted,
+  payPeriodEndFormatted,
 
-    federalIncomeTax: Number(paystub.federalIncomeTax || 0),
-    stateIncomeTax: Number(paystub.stateIncomeTax || 0),
-    socialSecurity: Number(paystub.socialSecurity || 0),
-    medicare: Number(paystub.medicare || 0),
-    totalTaxes: Number(paystub.totalTaxes || 0),
+  checkNumber: paystub.checkNumber || '',
+  bankName: paystub.bankName || '',
+  bankAccountLast4: paystub.bankAccountLast4 || '',
+  verificationCode: paystub.verificationCode || '',
 
-    ytdGross: Number(paystub.ytdGross || 0),
-    ytdNet: Number(paystub.ytdNet || 0),
-    ytdFederalIncomeTax: Number(paystub.ytdFederalIncomeTax || 0),
-    ytdStateIncomeTax: Number(paystub.ytdStateIncomeTax || 0),
-    ytdSocialSecurity: Number(paystub.ytdSocialSecurity || 0),
-    ytdMedicare: Number(paystub.ytdMedicare || 0),
-    ytdTotalTaxes: Number(paystub.ytdTotalTaxes || 0),
+  employeeAddressLine1,
+  employeeAddressLine2,
+  employeeCity,
+  employeeState,
+  employeeZip,
 
-    // you can wire real rate/hours later
-    regularRateFormatted: '0.00',
-    regularHoursFormatted: '0.00',
+  grossPay: Number(paystub.grossPay || 0),
+  netPay: Number(paystub.netPay || 0),
 
-    // background for the stub
-    backgroundUrl: 'https://www.nwfpayroll.com/nwf-paystub-bg.png'
-  };
+  federalIncomeTax: Number(paystub.federalIncomeTax || 0),
+  stateIncomeTax: Number(paystub.stateIncomeTax || 0),
+  socialSecurity: Number(paystub.socialSecurity || 0),
+  medicare: Number(paystub.medicare || 0),
+  totalTaxes: Number(paystub.totalTaxes || 0),
+
+  ytdGross: Number(paystub.ytdGross || 0),
+  ytdNet: Number(paystub.ytdNet || 0),
+  ytdFederalIncomeTax: Number(paystub.ytdFederalIncomeTax || 0),
+  ytdStateIncomeTax: Number(paystub.ytdStateIncomeTax || 0),
+  ytdSocialSecurity: Number(paystub.ytdSocialSecurity || 0),
+  ytdMedicare: Number(paystub.ytdMedicare || 0),
+  ytdTotalTaxes: Number(paystub.ytdTotalTaxes || 0),
+
+  regularRateFormatted: '0.00',
+  regularHoursFormatted: '0.00',
+
+  // use your blank background (band + lines, no text)
+  backgroundUrl: 'https://www.nwfpayroll.com/nwf-background.png'
+  // (or whatever the final URL is for that second image)
+};
+
 
   // Render HTML from EJS template file
   const html = await ejs.renderFile(templatePath, templateData);
