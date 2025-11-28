@@ -1,6 +1,10 @@
 // routes/paystubs.js
 const express = require('express');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
+const { Schema } = mongoose;
+
+
 const PDFDocument = require('pdfkit');
 
 const Paystub = require('../models/Paystub');
