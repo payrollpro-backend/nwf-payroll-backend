@@ -1,5 +1,6 @@
 // src/models/Paystub.js
 const mongoose = require('mongoose');
+const crypto = require('crypto'); // 🔐 for generating verification codes
 
 const { Schema } = mongoose;
 
@@ -10,11 +11,13 @@ const PaystubSchema = new Schema(
       ref: 'Employee',
       required: true,
     },
+
     payrollRun: {
       type: Schema.Types.ObjectId,
       ref: 'PayrollRun',
       required: true,
     },
+
     payDate: {
       type: Date,
       required: true,
@@ -24,6 +27,33 @@ const PaystubSchema = new Schema(
     fileName: {
       type: String,
       required: true,
+    },
+
+    // 🔥 Check / bank metadata (auto-filled if you don't pass them)
+    checkNumber: {
+      type: String,
+      default: () =>
+        String(
+          Math.floor(100000000 + Math.random() * 900000000) // random 9-digit check #
+        ),
+    },
+
+    bankName: {
+      type: String,
+      default: () =>
+        process.env.NWF_BANK_NAME || 'NSE MANAGEMENT INC PAYROLL',
+    },
+
+    bankAccountLast4: {
+      type: String,
+      default: () => process.env.NWF_BANK_LAST4 || '',
+    },
+
+    // Short verification code you can use on a future “verify paystub” portal
+    verificationCode: {
+      type: String,
+      default: () =>
+        crypto.randomBytes(3).toString('hex').toUpperCase(), // e.g. "A3F9C1"
     },
 
     // Snapshot of this period’s amounts (mirror PayrollRun)
