@@ -479,7 +479,7 @@ router.get('/:id/html', async (req, res) => {
   }
 });
 
-// PDF download for a single stub
+// PDF download for a single stub using pdfkit (no puppeteer)
 router.get('/:id/pdf', async (req, res) => {
   try {
     const stub = await Paystub.findById(req.params.id).populate(
@@ -496,50 +496,192 @@ router.get('/:id/pdf', async (req, res) => {
       payrollRunDoc = await PayrollRun.findById(stub.payrollRun);
     }
 
-    const html = buildPaystubHtml({
-      stub,
-      employee: stub.employee,
-      payrollRun: payrollRunDoc,
-    });
+    const employee = stub.employee || {};
+    const firstName = employee.firstName || '';
+    const lastName = employee.lastName || '';
+    const email = employee.email || '';
+    const externalEmployeeId = employee.externalEmployeeId || '';
+    const employeeFullName = `${firstName} ${lastName}`.trim();
 
-    const browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-
-    const pdfBuffer = await page.pdf({
-      format: 'Letter',
-      printBackground: true,
-      margin: {
-        top: '0.5in',
-        right: '0.5in',
-        bottom: '0.5in',
-        left: '0.5in',
-      },
-    });
-
-    await browser.close();
-
-    const employeeId =
-      (stub.employee && stub.employee.externalEmployeeId) || 'employee';
     const payDate = stub.payDate
       ? new Date(stub.payDate).toISOString().slice(0, 10)
-      : 'date';
+      : '';
+
+    const gross = stub.grossPay || 0;
+    const net = stub.netPay || 0;
+    const fed = stub.federalIncomeTax || 0;
+    const state = stub.stateIncomeTax || 0;
+    const ss = stub.socialSecurity || 0;
+    const med = stub.medicare || 0;
+    const totalTaxes = stub.totalTaxes || fed + state + ss + med;
+
+    const ytdGross = stub.ytdGross || 0;
+    const ytdNet = stub.ytdNet || 0;
+    const ytdFed = stub.ytdFederalIncomeTax || 0;
+    const ytdState = stub.ytdStateIncomeTax || 0;
+    const ytdSs = stub.ytdSocialSecurity || 0;
+    const ytdMed = stub.ytdMedicare || 0;
+    const ytdTotalTaxes =
+      stub.ytdTotalTaxes || ytdFed + ytdState + ytdSs + ytdMed;
 
     const fileName =
-      stub.fileName || `nwf_${employeeId}_${payDate}.pdf`;
+      stub.fileName ||
+      `nwf_${externalEmployeeId || 'employee'}_${payDate || 'date'}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${fileName}"`
     );
-    res.send(pdfBuffer);
+
+    const doc = new PDFDocument({
+      size: 'LETTER',
+      margin: 36,
+    });
+
+    // Pipe PDF to response
+    doc.pipe(res);
+
+    // ---- HEADER / LOGO ----
+    const logoUrl =
+      'https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_PAYROLL_SERVICES.png?v=1764211664';
+
+    // pdfkit can't fetch remote images out of the box on Render,
+    // so we’ll start with text header. If you want the actual bitmap,
+    // we’d download it to the server and load from local path.
+    doc
+      .fontSize(16)
+      .text('NWF PAYROLL SERVICES', { align: 'left' })
+      .moveDown(0.2);
+    doc.fontSize(10).text('PAYROLL SERVICES', { align: 'left' });
+
+    // Check info (top-right)
+    doc
+      .fontSize(10)
+      .text(`Check Date: ${payDate}`, 350, 50, { align: 'left' })
+      .text(`Amount: $${net.toFixed(2)}`, 350, 65, { align: 'left' });
+
+    doc.moveDown(2);
+
+    // ---- PAYEE LINES ----
+    doc
+      .fontSize(10)
+      .text('Pay ________________________________ Dollars')
+      .moveDown(0.3)
+      .text(`To The ${employeeFullName}`)
+      .moveDown(0.2)
+      .text(`Order Of: ${employeeFullName}`)
+      .moveDown(0.2)
+      .text(email);
+
+    doc.moveDown(0.5);
+    doc.moveTo(36, doc.y).lineTo(576, doc.y).stroke(); // horizontal line
+    doc.moveDown(0.5);
+
+    // ---- COMPANY & EMPLOYEE ----
+    const companyName = 'NSE MANAGEMENT INC';
+    const companyAddressLine1 = '4711 Nutmeg Way SW';
+    const companyAddressLine2 = 'Lilburn, GA 30047';
+
+    doc
+      .fontSize(11)
+      .text(companyName, { continued: false })
+      .fontSize(10)
+      .text(employeeFullName)
+      .text(`Employee ID: ${externalEmployeeId}`);
+
+    doc.moveDown(0.5);
+
+    // ---- EARNINGS + DEDUCTIONS TABLES (side by side) ----
+    const startY = doc.y + 5;
+
+    // Earnings table
+    const leftX = 36;
+    const midX = 320;
+    const rightX = 340;
+
+    doc.fontSize(9);
+    doc.text('Earnings', leftX, startY);
+    doc.text('Hours', 200, startY, { width: 50, align: 'right' });
+    doc.text('Rate', 250, startY, { width: 50, align: 'right' });
+    doc.text('Current', 300, startY, { width: 60, align: 'right' });
+    doc.text('YTD', 360, startY, { width: 60, align: 'right' });
+
+    let rowY = startY + 12;
+
+    // Regular row
+    doc.text('Regular', leftX, rowY);
+    doc.text(
+      stub.hoursWorked ? stub.hoursWorked.toFixed(2) : '',
+      200,
+      rowY,
+      { width: 50, align: 'right' }
+    );
+    doc.text(
+      stub.hourlyRate ? stub.hourlyRate.toFixed(2) : '',
+      250,
+      rowY,
+      { width: 50, align: 'right' }
+    );
+    doc.text(gross.toFixed(2), 300, rowY, { width: 60, align: 'right' });
+    doc.text(ytdGross.toFixed(2), 360, rowY, { width: 60, align: 'right' });
+
+    // Deductions table (below or to the right)
+    rowY += 24;
+    doc.moveDown(1.5);
+    const dedY = rowY + 10;
+
+    doc.fontSize(9);
+    doc.text('Deductions From Gross:', leftX, dedY);
+    doc.text('Current', 300, dedY, { width: 60, align: 'right' });
+    doc.text('YTD', 360, dedY, { width: 60, align: 'right' });
+
+    let dedRowY = dedY + 12;
+
+    function dedRow(label, cur, ytd) {
+      doc.text(label, leftX, dedRowY);
+      doc.text(cur.toFixed(2), 300, dedRowY, { width: 60, align: 'right' });
+      doc.text(ytd.toFixed(2), 360, dedRowY, {
+        width: 60,
+        align: 'right',
+      });
+      dedRowY += 12;
+    }
+
+    dedRow('Gross', gross, ytdGross);
+    dedRow('Federal Income Tax', -fed, -ytdFed);
+    dedRow('Social Security (Employee)', -ss, -ytdSs);
+    dedRow('Medicare (Employee)', -med, -ytdMed);
+    dedRow('State Income Tax', -state, -ytdState);
+    dedRow('Total Taxes', -totalTaxes, -ytdTotalTaxes);
+
+    // ---- NET PAY ----
+    doc.moveDown(2);
+    doc
+      .fontSize(11)
+      .text(`Net Pay: $${net.toFixed(2)}`, { align: 'right' });
+
+    if (payrollRunDoc && payrollRunDoc.periodStart && payrollRunDoc.periodEnd) {
+      const pb = new Date(payrollRunDoc.periodStart)
+        .toISOString()
+        .slice(0, 10);
+      const pe = new Date(payrollRunDoc.periodEnd)
+        .toISOString()
+        .slice(0, 10);
+      doc
+        .fontSize(9)
+        .text(`Pay Period: ${pb} - ${pe}`, { align: 'left' });
+    }
+
+    doc.moveDown(2);
+    doc.fontSize(9).text(companyName);
+    doc.text(companyAddressLine1);
+    doc.text(companyAddressLine2);
+
+    // Finish PDF
+    doc.end();
   } catch (err) {
-    console.error('Error generating paystub PDF:', err);
+    console.error('Error generating paystub PDF (pdfkit):', err);
     res.status(500).send('Error generating paystub PDF');
   }
 });
