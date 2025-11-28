@@ -3,8 +3,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const PDFDocument = require('pdfkit');
 const { generateAdpPaystubPdf } = require('../services/paystubPdf');
-
-f
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
 
