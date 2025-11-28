@@ -1,223 +1,238 @@
+// src/utils/paystubPdf.js
 const PDFDocument = require('pdfkit');
-const path = require('path');
-const PayrollRun = require('../models/PayrollRun');
 
-function toMoney(num) {
-  const n = Number(num || 0);
-  return n.toLocaleString('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 2,
-  });
-}
+/**
+ * generatePaystubPdf
+ *
+ * @param {Response} res - Express response (we will stream PDF)
+ * @param {Object} employee - Employee document
+ * @param {Object} run - PayrollRun document
+ * @param {Object} stub - Paystub document
+ */
+function generatePaystubPdf(res, employee, run, stub) {
+  const doc = new PDFDocument({ margin: 36 }); // 0.5" margins
 
-// Very simple placeholder – can swap for real number-to-words later
-function numberToWords(amount) {
-  return `${amount.toFixed(2)} DOLLARS`;
-}
-
-async function computeYtd(employeeId, payDate) {
-  const startOfYear = new Date(payDate.getFullYear(), 0, 1);
-
-  const runs = await PayrollRun.find({
-    employee: employeeId,
-    payDate: { $gte: startOfYear, $lte: payDate },
-  });
-
-  return runs.reduce(
-    (tot, r) => {
-      tot.gross          += r.grossPay || 0;
-      tot.net            += r.netPay || 0;
-      tot.federalIncome  += r.federalIncomeTax || 0;
-      tot.stateIncome    += r.stateIncomeTax || 0;
-      tot.socialSecurity += r.socialSecurity || 0;
-      tot.medicare       += r.medicare || 0;
-      return tot;
-    },
-    {
-      gross: 0,
-      net: 0,
-      federalIncome: 0,
-      stateIncome: 0,
-      socialSecurity: 0,
-      medicare: 0,
-    }
-  );
-}
-
-async function generatePaystubPdf(res, employee, payrollRun, paystub) {
-  const payDate = new Date(paystub.payDate);
-  const ytdTotals = await computeYtd(employee._id, payDate);
-
-  const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
-
-  // === Metadata for tamper checking / verification ===
-  doc.info.Title = 'NWF Payroll Paystub';
-  doc.info.Author = 'NWF Payroll Services';
-  doc.info.Subject = 'Official paystub';
-  doc.info.Keywords = 'NWF Payroll, paystub, verification';
-  doc.info.CreationDate = new Date();
-
-  const verificationTag = `NWF_PAYSTUB_${paystub._id.toString()}`;
-
+  const fileName = stub?.fileName || 'paystub.pdf';
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader(
     'Content-Disposition',
-    `attachment; filename="${paystub.fileName || 'paystub.pdf'}"`
+    `attachment; filename="${fileName}"`
   );
 
   doc.pipe(res);
 
-  const logoPath = path.join(__dirname, '..', 'assets', 'NWF_PAYROLL_SERVICES.png');
-  try {
-    doc.image(logoPath, 380, 40, { width: 160 }); // top-right, smaller
-  } catch (e) {
-    console.warn('Logo not found at', logoPath);
+  // Helper: money format
+  const money = (n) =>
+    typeof n === 'number' ? n.toFixed(2) : (Number(n) || 0).toFixed(2);
+
+  // --------- HEADER (Employer + Logo placeholder) ----------
+  const companyName =
+    run?.companyName ||
+    employee?.companyName ||
+    'NWF PAYROLL SERVICES';
+
+  doc
+    .fontSize(16)
+    .font('Helvetica-Bold')
+    .text(companyName, 36, 40);
+
+  doc
+    .fontSize(9)
+    .font('Helvetica')
+    .text('Official Pay Statement', 36, 60);
+
+  // (If later you host your logo at a URL, you can download it first
+  // and then doc.image(localPath, x, y, { width: 80 }))
+
+  // --------- EMPLOYER + EMPLOYEE BLOCK ----------
+  const empFullName = [employee.firstName, employee.lastName]
+    .filter(Boolean)
+    .join(' ');
+
+  const externalId =
+    employee.externalEmployeeId ||
+    employee.employeeId ||
+    (employee._id && `Emp_${String(employee._id).slice(-8)}`);
+
+  const addr = employee.address || {};
+  const payDate = stub.payDate || run.payDate;
+  const periodStart = run.periodStart;
+  const periodEnd = run.periodEnd;
+
+  // Left column: Employee
+  let y = 90;
+  doc
+    .fontSize(10)
+    .font('Helvetica-Bold')
+    .text('Employee', 36, y);
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .text(empFullName || 'Employee', 36, y + 14);
+  if (externalId) {
+    doc.text(`Employee ID: ${externalId}`, 36, y + 28);
   }
-
-  const amount = payrollRun.netPay || 0;
-  const amountFormatted = toMoney(amount);
-
-  // Header (similar to your sample)
-  doc
-    .fontSize(10)
-    .text('NWF PAYROLL SERVICES', 40, 40)
-    .moveDown(0.2);
-
-  doc
-    .fontSize(10)
-    .text('Check Date', 380, 90)
-    .text(payDate.toLocaleDateString('en-US'), 460, 90)
-    .text('Amount', 380, 105)
-    .text(amountFormatted, 460, 105);
-
-  doc
-    .fontSize(10)
-    .text('Pay', 40, 120)
-    .text(numberToWords(amount), 70, 120, { underline: true, width: 340 })
-    .text('Dollars', 420, 120);
-
-  doc
-    .text('To The', 40, 140)
-    .text(`${employee.firstName} ${employee.lastName}`, 90, 140)
-    .text(employee.address?.line1 || '', 90, 154)
-    .text(
-      `${employee.address?.city || ''}, ${employee.address?.state || ''} ${
-        employee.address?.zip || ''
-      }`,
-      90,
-      168
+  if (addr.line1 || addr.city) {
+    doc.text(
+      [
+        addr.line1,
+        addr.line2,
+        [addr.city, addr.state, addr.zip].filter(Boolean).join(' '),
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      36,
+      y + 42
     );
-
-  doc
-    .moveTo(40, 195)
-    .lineTo(350, 195)
-    .stroke();
-  doc
-    .moveTo(360, 195)
-    .lineTo(560, 195)
-    .stroke();
-
-  doc.fontSize(8).text('MEMO', 40, 198).text('AUTHORIZED SIGNATURE', 410, 198);
-
-  function drawStub(yStart) {
-    const leftX = 40;
-    const rightX = 320;
-
-    doc
-      .fontSize(10)
-      .text(employee.companyName || 'NSE MANAGEMENT INC', leftX, yStart);
-
-    doc
-      .text(`${employee.firstName} ${employee.lastName}`, leftX, yStart + 18)
-      .text(
-        `Employee ID: ${employee.externalEmployeeId || 'Emp ID ----'}`,
-        leftX,
-        yStart + 32
-      );
-
-    doc
-      .text('Check Date:', rightX, yStart + 18)
-      .text(payDate.toLocaleDateString('en-US'), rightX + 80, yStart + 18)
-      .text('Pay Period Beginning:', rightX, yStart + 32)
-      .text(
-        new Date(payrollRun.periodStart).toLocaleDateString('en-US'),
-        rightX + 120,
-        yStart + 32
-      )
-      .text('Pay Period Ending:', rightX, yStart + 46)
-      .text(
-        new Date(payrollRun.periodEnd).toLocaleDateString('en-US'),
-        rightX + 120,
-        yStart + 46
-      );
-
-    const tableY = yStart + 70;
-    doc
-      .fontSize(10)
-      .text('Earnings', leftX, tableY)
-      .text('Hours', leftX + 110, tableY)
-      .text('Rate', leftX + 170, tableY)
-      .text('Current', leftX + 230, tableY)
-      .text('YTD', leftX + 310, tableY);
-
-    const gross = payrollRun.grossPay || 0;
-
-    doc
-      .text('Regular', leftX, tableY + 16)
-      .text((payrollRun.hoursWorked || 0).toFixed(2), leftX + 110, tableY + 16)
-      .text(`$${(payrollRun.hourlyRate || 0).toFixed(2)}`, leftX + 170, tableY + 16)
-      .text(toMoney(gross), leftX + 230, tableY + 16)
-      .text(toMoney(ytdTotals.gross), leftX + 310, tableY + 16);
-
-    const dedY = tableY;
-    doc
-      .text('Deductions From Gross:', rightX, dedY)
-      .text('Current', rightX + 150, dedY)
-      .text('YTD', rightX + 230, dedY);
-
-    const lines = [
-      ['Gross', gross, ytdTotals.gross],
-      ['Federal Income Tax', payrollRun.federalIncomeTax, ytdTotals.federalIncome],
-      ['Social Security (Employee)', payrollRun.socialSecurity, ytdTotals.socialSecurity],
-      ['Medicare (Employee)', payrollRun.medicare, ytdTotals.medicare],
-      ['State of GA Income Tax', payrollRun.stateIncomeTax, ytdTotals.stateIncome],
-    ];
-
-    let rowY = dedY + 16;
-    lines.forEach(([label, current, ytd]) => {
-      doc
-        .text(label, rightX, rowY)
-        .text(toMoney(current), rightX + 150, rowY)
-        .text(toMoney(ytd), rightX + 230, rowY);
-      rowY += 14;
-    });
-
-    doc
-      .fontSize(10)
-      .text('Net Pay:', rightX, rowY + 14)
-      .text(toMoney(payrollRun.netPay), rightX + 60, rowY + 14)
-      .text(toMoney(ytdTotals.net), rightX + 150, rowY + 14);
   }
 
-  drawStub(230);
-  drawStub(430);
-
+  // Right column: Pay details
   doc
     .fontSize(10)
-    .text(employee.companyName || 'NSE MANAGEMENT INC', 40, 650)
-    .text('4711 Nutmeg Way SW', 40, 664)
-    .text('Lilburn, GA 30047', 40, 678);
-
-  doc.save();
+    .font('Helvetica-Bold')
+    .text('Pay Details', 320, y);
   doc
-    .fontSize(6)
+    .font('Helvetica')
+    .fontSize(9)
+    .text(
+      `Pay Date: ${payDate ? new Date(payDate).toLocaleDateString() : ''}`,
+      320,
+      y + 14
+    );
+  doc.text(
+    `Period: ${
+      periodStart ? new Date(periodStart).toLocaleDateString() : '—'
+    }  –  ${
+      periodEnd ? new Date(periodEnd).toLocaleDateString() : '—'
+    }`,
+    320,
+    y + 28
+  );
+  if (run.payFrequency) {
+    doc.text(`Frequency: ${run.payFrequency}`, 320, y + 42);
+  }
+  if (run.payType) {
+    doc.text(`Pay Type: ${run.payType}`, 320, y + 56);
+  }
+
+  // Divider line
+  doc.moveTo(36, 150).lineTo(559, 150).strokeColor('#cccccc').stroke();
+
+  // --------- EARNINGS (CURRENT vs YTD) ----------
+  y = 165;
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(11)
     .fillColor('#000000')
-    .opacity(0.05)
-    .text(verificationTag, 40, 710);
-  doc.restore();
+    .text('Earnings', 36, y);
+  y += 18;
+
+  // table headers
+  doc
+    .fontSize(9)
+    .font('Helvetica-Bold')
+    .text('Description', 36, y);
+  doc.text('Current', 260, y, { width: 80, align: 'right' });
+  doc.text('YTD', 400, y, { width: 80, align: 'right' });
+
+  y += 14;
+  doc.moveTo(36, y).lineTo(559, y).strokeColor('#dddddd').stroke();
+  y += 6;
+
+  // Gross
+  doc
+    .font('Helvetica')
+    .fontSize(9)
+    .text('Gross Pay', 36, y);
+  doc.text(money(run.grossPay), 260, y, { width: 80, align: 'right' });
+  doc.text(money(run.ytdGross), 400, y, { width: 80, align: 'right' });
+  y += 14;
+
+  // Net
+  doc.text('Net Pay', 36, y);
+  doc.text(money(run.netPay), 260, y, { width: 80, align: 'right' });
+  doc.text(money(run.ytdNet), 400, y, { width: 80, align: 'right' });
+  y += 20;
+
+  doc
+    .font('Helvetica-Bold')
+    .text('Net Pay This Period:', 36, y);
+  doc
+    .font('Helvetica-Bold')
+    .text(`$${money(run.netPay)}`, 260, y, { width: 120, align: 'right' });
+
+  // --------- TAXES / DEDUCTIONS ----------
+  y += 30;
+  doc
+    .font('Helvetica-Bold')
+    .fontSize(11)
+    .text('Taxes & Deductions', 36, y);
+  y += 18;
+
+  doc
+    .fontSize(9)
+    .font('Helvetica-Bold')
+    .text('Description', 36, y);
+  doc.text('Current', 260, y, { width: 80, align: 'right' });
+  doc.text('YTD', 400, y, { width: 80, align: 'right' });
+
+  y += 14;
+  doc.moveTo(36, y).lineTo(559, y).strokeColor('#dddddd').stroke();
+  y += 6;
+
+  const lines = [
+    {
+      label: 'Federal Income Tax',
+      curr: run.federalIncomeTax,
+      ytd: run.ytdFederalIncomeTax,
+    },
+    {
+      label: 'State Income Tax',
+      curr: run.stateIncomeTax,
+      ytd: run.ytdStateIncomeTax,
+    },
+    {
+      label: 'Social Security',
+      curr: run.socialSecurity,
+      ytd: run.ytdSocialSecurity,
+    },
+    {
+      label: 'Medicare',
+      curr: run.medicare,
+      ytd: run.ytdMedicare,
+    },
+    {
+      label: 'Total Taxes',
+      curr: run.totalTaxes,
+      ytd: run.ytdTotalTaxes,
+    },
+  ];
+
+  doc.font('Helvetica').fontSize(9);
+
+  lines.forEach((row) => {
+    doc.text(row.label, 36, y);
+    doc.text(`$${money(row.curr)}`, 260, y, { width: 80, align: 'right' });
+    doc.text(`$${money(row.ytd)}`, 400, y, { width: 80, align: 'right' });
+    y += 14;
+  });
+
+  // --------- FOOTER / SECURITY LINE ----------
+  y += 20;
+  doc
+    .fontSize(8)
+    .fillColor('#555555')
+    .text(
+      'This pay statement is generated by NWF Payroll Services. ' +
+        'Altering figures on this document may be detectable via internal metadata records.',
+      36,
+      y,
+      { width: 523 }
+    );
 
   doc.end();
 }
 
-module.exports = { generatePaystubPdf };
+module.exports = {
+  generatePaystubPdf,
+};
