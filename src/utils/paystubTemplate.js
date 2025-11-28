@@ -26,12 +26,9 @@ function formatDate(date) {
  * @param {Object} params.payrollRun - Populated PayrollRun (optional)
  */
 function buildPaystubHtml({ stub, employee, payrollRun }) {
-  const firstName =
-    (employee && employee.firstName) || stub.firstName || '';
-  const lastName =
-    (employee && employee.lastName) || stub.lastName || '';
-  const email =
-    (employee && employee.email) || stub.email || '';
+  const firstName = (employee && employee.firstName) || stub.firstName || '';
+  const lastName = (employee && employee.lastName) || stub.lastName || '';
+  const email = (employee && employee.email) || stub.email || '';
   const externalEmployeeId =
     (employee && employee.externalEmployeeId) ||
     stub.externalEmployeeId ||
@@ -43,11 +40,10 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   const periodBegin = payrollRun ? formatDate(payrollRun.periodStart) : '';
   const periodEnd = payrollRun ? formatDate(payrollRun.periodEnd) : '';
 
-  // You can later pull this from Employer or Company settings.
+  // For now, hard-code; later you can pull from Employer/company settings
   const companyName = 'NSE MANAGEMENT INC';
-  const companyAddressLine1 = '4711 nutmeg way sw';
-  const companyAddressLine2 = 'lilburn, GA 30047';
-  const brandName = 'NWF PAYROLL SERVICES';
+  const companyAddressLine1 = '4711 Nutmeg Way SW';
+  const companyAddressLine2 = 'Lilburn, GA 30047';
 
   const gross = stub.grossPay || 0;
   const net = stub.netPay || 0;
@@ -63,13 +59,12 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   const ytdState = stub.ytdStateIncomeTax || 0;
   const ytdSs = stub.ytdSocialSecurity || 0;
   const ytdMed = stub.ytdMedicare || 0;
-  const ytdTotalTaxes = stub.ytdTotalTaxes || (ytdFed + ytdState + ytdSs + ytdMed);
+  const ytdTotalTaxes =
+    stub.ytdTotalTaxes || (ytdFed + ytdState + ytdSs + ytdMed);
 
-  // Optional earnings details – if you add these later they will show up.
   const hours = stub.hoursWorked || 0;
   const rate = stub.hourlyRate || 0;
 
-  // Helps you show “Three thousand six hundred two and 56/100” later if you want.
   const netFormatted = formatCurrency(net);
 
   return `
@@ -107,6 +102,9 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       font-size: 16px;
       letter-spacing: 1px;
     }
+    .sub-brand {
+      font-size: 10px;
+    }
     .check-meta {
       font-size: 11px;
       text-align: right;
@@ -141,7 +139,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       text-align: right;
     }
     .net-pay-line {
-      margin-top: 12px;
+      margin-top: 10px;
       display: flex;
       justify-content: flex-end;
       font-size: 12px;
@@ -150,7 +148,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       margin-left: 6px;
     }
     .stub-block {
-      margin-top: 16px;
+      margin-top: 18px;
       padding-top: 8px;
       border-top: 1px dashed #aaa;
     }
@@ -166,7 +164,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
     <div class="section row">
       <div>
         <div class="brand">NWF PAYROLL SERVICES</div>
-        <div class="small">PAYROLL SERVICES</div>
+        <div class="sub-brand">PAYROLL SERVICES</div>
       </div>
       <div class="check-meta">
         <table>
@@ -182,7 +180,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       </div>
     </div>
 
-    <!-- Payee info (stub-style check face) -->
+    <!-- Payee line -->
     <div class="section">
       <div><span class="label">Pay</span> ________________________________ Dollars</div>
       <div style="margin-top: 6px;">
@@ -200,9 +198,10 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
     <div class="section">
       <div class="label">${companyName}</div>
       <div>${employeeFullName}</div>
-      <div>Employee ID:&nbsp;&nbsp;${externalEmployeeId}</div>
+      <div>Employee ID: ${externalEmployeeId}</div>
 
       <div class="row" style="margin-top: 8px;">
+        <!-- Earnings -->
         <div style="width: 55%; padding-right: 8px;">
           <table>
             <thead>
@@ -217,7 +216,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
             <tbody>
               <tr>
                 <td>Regular</td>
-                <td class="right">${hours.toFixed ? hours.toFixed(2) : hours}</td>
+                <td class="right">${hours ? hours.toFixed(2) : ''}</td>
                 <td class="right">${rate ? rate.toFixed(2) : ''}</td>
                 <td class="right">${formatCurrency(gross)}</td>
                 <td class="right">${formatCurrency(ytdGross)}</td>
@@ -226,6 +225,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
           </table>
         </div>
 
+        <!-- Deductions -->
         <div style="width: 45%; padding-left: 8px;">
           <table>
             <thead>
@@ -286,7 +286,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
     <div class="stub-block">
       <div class="label">${companyName}</div>
       <div>${employeeFullName}</div>
-      <div>Employee ID:&nbsp;&nbsp;${externalEmployeeId}</div>
+      <div>Employee ID: ${externalEmployeeId}</div>
 
       <div class="row" style="margin-top: 8px;">
         <div style="width: 55%; padding-right: 8px;">
@@ -303,7 +303,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
             <tbody>
               <tr>
                 <td>Regular</td>
-                <td class="right">${hours.toFixed ? hours.toFixed(2) : hours}</td>
+                <td class="right">${hours ? hours.toFixed(2) : ''}</td>
                 <td class="right">${rate ? rate.toFixed(2) : ''}</td>
                 <td class="right">${formatCurrency(gross)}</td>
                 <td class="right">${formatCurrency(ytdGross)}</td>
