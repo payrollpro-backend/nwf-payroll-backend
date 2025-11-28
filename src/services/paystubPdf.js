@@ -65,7 +65,8 @@ async function generateAdpPaystubPdf(paystub) {
     // if you later store real rate/hours, plug them here
     regularRateFormatted: '0.00',
     regularHoursFormatted: '0.00',
-  };
+    backgroundUrl: 'https://www.nwfpayroll.com/nwf-paystub-bg.png',
+    };
 
   // Render HTML from EJS template file
   const html = await ejs.renderFile(templatePath, templateData);
