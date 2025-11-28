@@ -83,7 +83,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   const netFormatted = formatCurrency(net);
 
   return `
-<!doctype html>
+<!type html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -262,7 +262,7 @@ router.get('/:id/html', async (req, res) => {
 
     if (!stub) return res.status(404).send('Paystub not found');
 
-    const payrollRunDoc =
+    const payrollRun =
       PayrollRun && stub.payrollRun
         ? await PayrollRun.findById(stub.payrollRun)
         : null;
@@ -270,7 +270,7 @@ router.get('/:id/html', async (req, res) => {
     const html = buildPaystubHtml({
       stub,
       employee: stub.employee,
-      payrollRun: payrollRunDoc,
+      payrollRun: payrollRun,
     });
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -290,7 +290,7 @@ router.get('/:id/pdf', async (req, res) => {
       return res.status(404).send('Paystub not found');
     }
 
-    const payrollRunDoc =
+    const payrollRun =
       PayrollRun && stub.payrollRun
         ? await PayrollRun.findById(stub.payrollRun)
         : null;
@@ -351,8 +351,8 @@ router.get('/:id/pdf', async (req, res) => {
       `attachment; filename="${fileName}"`
     );
 
-    const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
-    doc.pipe(res);
+    const  = new PDFument({ size: 'LETTER', margin: 36 });
+    .pipe(res);
 
     // =======================
     // TOP CHECK AREA (ADP-like)
@@ -361,44 +361,44 @@ router.get('/:id/pdf', async (req, res) => {
     let y = 36;
 
     // "Logo" / Brand block – if you later add an image file to the repo,
-    // you can replace this with doc.image('path/to/logo.png', 36, y, { width: 120 })
-    doc.fontSize(16).text('NWF PAYROLL SERVICES', 36, y);
+    // you can replace this with .image('path/to/logo.png', 36, y, { width: 120 })
+    .fontSize(16).text('NWF PAYROLL SERVICES', 36, y);
     y += 16;
-    doc.fontSize(9).text('PAYROLL SERVICES', 36, y);
+    .fontSize(9).text('PAYROLL SERVICES', 36, y);
 
     // Check info box (right)
-    doc.fontSize(9);
-    doc.text('Check Date:', 400, 40);
-    doc.text(payDateStr, 480, 40);
-    doc.text('Amount:', 400, 55);
-    doc.text(`$${formatNum(net)}`, 480, 55);
+    .fontSize(9);
+    .text('Check Date:', 400, 40);
+    .text(payDateStr, 480, 40);
+    .text('Amount:', 400, 55);
+    .text(`$${formatNum(net)}`, 480, 55);
 
     // Payee lines
     y = 82;
-    doc.fontSize(10).text('Pay to the Order of', 36, y);
-    doc.moveTo(140, y + 10).lineTo(380, y + 10).stroke();
-    doc.text(employeeFullName, 145, y);
+    .fontSize(10).text('Pay to the Order of', 36, y);
+    .moveTo(140, y + 10).lineTo(380, y + 10).stroke();
+    .text(employeeFullName, 145, y);
 
     // Written-out amount placeholder line
     y += 24;
-    doc.text('Amount in Words', 36, y);
-    doc.moveTo(120, y + 10).lineTo(560, y + 10).stroke();
+    .text('Amount in Words', 36, y);
+    .moveTo(120, y + 10).lineTo(560, y + 10).stroke();
 
     // Memo and signature
     y += 28;
-    doc.text('Memo', 36, y);
-    doc.moveTo(70, y + 10).lineTo(320, y + 10).stroke();
+    .text('Memo', 36, y);
+    .moveTo(70, y + 10).lineTo(320, y + 10).stroke();
 
-    doc.text('AUTHORIZED SIGNATURE', 360, y + 12, { align: 'right' });
-    doc.moveTo(320, y + 10).lineTo(560, y + 10).stroke();
+    .text('AUTHORIZED SIGNATURE', 360, y + 12, { align: 'right' });
+    .moveTo(320, y + 10).lineTo(560, y + 10).stroke();
 
     // Little MICR-style line (visual only)
     y += 40;
-    doc.fontSize(9).text('"OO 1080"', 260, y, { align: 'center' });
+    .fontSize(9).text('"OO 1080"', 260, y, { align: 'center' });
 
     // Tear line
     y += 20;
-    doc.moveTo(36, y).lineTo(576, y).dash(2, { space: 2 }).stroke().undash();
+    .moveTo(36, y).lineTo(576, y).dash(2, { space: 2 }).stroke().undash();
 
     // =======================
     // BOTTOM EARNINGS STUB
@@ -407,9 +407,9 @@ router.get('/:id/pdf', async (req, res) => {
     y += 16;
 
     // Employer + employee info
-    doc.fontSize(10).text(companyName, 36, y);
+    .fontSize(10).text(companyName, 36, y);
     y += 12;
-    doc.text(companyAddressLine1, 36, y);
+    .text(companyAddressLine1, 36, y);
     y += 12;
     doc.text(companyAddressLine2, 36, y);
 
@@ -508,6 +508,10 @@ router.get('/:id/pdf', async (req, res) => {
     doc.fontSize(8).text(companyName, 36, y);
     doc.text(companyAddressLine1, 36, y + 10);
     doc.text(companyAddressLine2, 36, y + 20);
+    [ FOOTER COMPANY BLOCK ]
+⬇️ INSERT VERIFICATION BLOCK HERE
+doc.end();
+
 
     doc.end();
   } catch (err) {
