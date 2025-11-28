@@ -1,127 +1,71 @@
-// src/routes/paystubs.js
-
+// routes/paystubs.js
 const express = require('express');
-const Employee = require('../models/Employee');
-const PayrollRun = require('../models/PayrollRun');
+const mongoose = require('mongoose');
+
 const Paystub = require('../models/Paystub');
-const { generatePaystubPdf } = require('../utils/paystubPdf');
+const Employee = require('../models/Employee');
 
 const router = express.Router();
 
-/**
- * GET /api/paystubs/employee/:employeeId
- * List paystubs for a specific employee.
- * (Public for now – you can lock it down later with middleware.)
- */
-router.get('/employee/:employeeId', async (req, res) => {
+// GET /api/paystubs
+// Admin: list all paystubs
+router.get('/', async (req, res) => {
   try {
-    const requestedId = req.params.employeeId;
+    const paystubs = await Paystub.find()
+      .populate('employee', 'firstName lastName email externalEmployeeId')
+      .sort({ payDate: -1 });
 
-    const stubs = await Paystub.find({ employee: requestedId })
-      .sort({ payDate: -1 })
-      .populate('payrollRun')
-      .lean();
-
-    const response = stubs.map((stub) => {
-      const run = stub.payrollRun || {};
-      return {
-        id: stub._id,
-        payDate: stub.payDate || run.payDate,
-        fileName: stub.fileName,
-        grossPay: run.grossPay || 0,
-        netPay: run.netPay || 0,
-      };
-    });
-
-    res.json(response);
+    res.json(paystubs);
   } catch (err) {
-    console.error('List paystubs error:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching paystubs:', err);
+    res.status(500).json({ message: 'Server error fetching paystubs' });
   }
 });
 
-/**
- * GET /api/paystubs/:id/pdf
- * Return a PDF that visually matches the sample stub.
- * Computes YTD based on all runs in the SAME YEAR up to this pay date.
- * (No auth check yet – you can add middleware later.)
- */
-router.get('/:id/pdf', async (req, res) => {
+// GET /api/paystubs/employee/:employeeId
+// Employee: list paystubs by employee
+// Accepts either Mongo _id OR externalEmployeeId (like Emp_ID_00000001)
+router.get('/employee/:employeeId', async (req, res) => {
   try {
-    const paystubId = req.params.id;
+    const { employeeId } = req.params;
 
-    const paystub = await Paystub.findById(paystubId)
-      .populate('employee')
-      .populate('payrollRun');
-
-    if (!paystub) {
-      return res.status(404).json({ error: 'Paystub not found' });
+    const query = {};
+    if (mongoose.Types.ObjectId.isValid(employeeId)) {
+      query._id = employeeId; // Mongo id
+    } else {
+      query.externalEmployeeId = employeeId; // human-readable id
     }
 
-    const employee = paystub.employee;
-    const run = paystub.payrollRun;
-
-    if (!run) {
-      return res.status(400).json({ error: 'This paystub has no payroll run attached' });
+    const employee = await Employee.findOne(query);
+    if (!employee) {
+      return res.status(404).json({ message: 'Employee not found' });
     }
 
-    // ---- YTD CALCULATION (YEAR-TO-DATE) ----
-    const payDate = new Date(paystub.payDate || run.payDate);
-    const yearStart = new Date(payDate.getFullYear(), 0, 1);
+    const stubs = await Paystub.find({ employee: employee._id })
+      .sort({ payDate: -1 });
 
-    const runsThisYear = await PayrollRun.find({
-      employee: employee._id,
-      payDate: { $gte: yearStart, $lte: payDate },
-    }).lean();
-
-    let ytdGross = 0;
-    let ytdFederal = 0;
-    let ytdState = 0;
-    let ytdSS = 0;
-    let ytdMedicare = 0;
-    let ytdNet = 0;
-    let ytdTaxes = 0;
-
-    for (const r of runsThisYear) {
-      const gross = Number(r.grossPay || 0);
-      const fed = Number(r.federalIncomeTax || 0);
-      const st = Number(r.stateIncomeTax || 0);
-      const ss = Number(r.socialSecurity || 0);
-      const med = Number(r.medicare || 0);
-      const taxes = Number(r.totalTaxes || 0) || fed + st + ss + med;
-      const net = Number(r.netPay || (gross - taxes));
-
-      ytdGross += gross;
-      ytdFederal += fed;
-      ytdState += st;
-      ytdSS += ss;
-      ytdMedicare += med;
-      ytdTaxes += taxes;
-      ytdNet += net;
-    }
-
-    const ytdData = {
-      gross: ytdGross,
-      federal: ytdFederal,
-      state: ytdState,
-      socialSecurity: ytdSS,
-      medicare: ytdMedicare,
-      totalTaxes: ytdTaxes,
-      net: ytdNet,
-    };
-
-    // Headers for browser
-    res.setHeader('Content-Type', 'application/pdf');
-    const safeFile =
-      paystub.fileName ||
-      `paystub_${employee._id}_${payDate.toISOString().slice(0, 10)}.pdf`;
-    res.setHeader('Content-Disposition', `inline; filename="${safeFile}"`);
-
-    // Generate the PDF (writes directly to res)
-    generatePaystubPdf(res, employee, run, paystub, ytdData);
+    res.json(stubs);
   } catch (err) {
-    console.error('Paystub PDF error:', err);
-    res.status(500).json({ error: err.message });
+    console.error('Error fetching paystubs by employee:', err);
+    res.status(500).json({ message: 'Server error fetching employee paystubs' });
+  }
+});
+
+// GET /api/paystubs/:id
+// Single paystub by its own Paystub _id
+router.get('/:id', async (req, res) => {
+  try {
+    const stub = await Paystub.findById(req.params.id)
+      .populate('employee', 'firstName lastName email externalEmployeeId');
+
+    if (!stub) {
+      return res.status(404).json({ message: 'Paystub not found' });
+    }
+
+    res.json(stub);
+  } catch (err) {
+    console.error('Error fetching paystub by id:', err);
+    res.status(500).json({ message: 'Server error fetching paystub' });
   }
 });
 
