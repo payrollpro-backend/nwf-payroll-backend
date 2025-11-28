@@ -1,77 +1,82 @@
+// src/models/Employee.js
 const mongoose = require('mongoose');
+const { Schema } = mongoose;
 
-// Utility for generating employee IDs if you use that feature
-function generateEmployeeId() {
-  const prefix = 'EMP';
-  const random = Math.floor(100000 + Math.random() * 900000); // 6-digit number
-  return `${prefix}${random}`;
-}
-
-const EmployeeSchema = new mongoose.Schema(
+const EmployeeSchema = new Schema(
   {
-    // ================================
-    // BASIC EMPLOYEE INFORMATION
-    // ================================
+    employer: { type: Schema.Types.ObjectId, ref: 'Employer', default: null },
+
     firstName: { type: String, required: true },
-    lastName:  { type: String, required: true },
-    email:     { type: String, required: true },
+    lastName: { type: String, required: true },
 
-    phone:     { type: String },
-    ssn:       { type: String },    // if you’re storing SSN encrypted, update later
+    email: { type: String, required: true, unique: true },
+    phone: { type: String, default: '' },
 
-    // EMPLOYEE ID
-    externalEmployeeId: {
+    passwordHash: { type: String },
+    role: {
       type: String,
-      default: generateEmployeeId,
+      enum: ['admin', 'employer', 'employee'],
+      default: 'employee',
     },
 
-    // ================================
-    // ADDRESS INFORMATION
-    // ================================
+    // External / display employee ID like Emp_ID_XXXXXXXXX
+    externalEmployeeId: { type: String, default: '' },
+
+    companyName: { type: String, default: '' },
+
     address: {
-      line1:      { type: String },
-      city:       { type: String },
-      state:      { type: String },
-      postalCode: { type: String },
+      line1: { type: String, default: '' },
+      line2: { type: String, default: '' },
+      city: { type: String, default: '' },
+      state: { type: String, default: '' },
+      zip: { type: String, default: '' },
     },
 
-    // ================================
-    // EMPLOYMENT DETAILS
-    // ================================
-    startDate: { type: Date },
+    payMethod: {
+      type: String,
+      enum: ['direct_deposit', 'check'],
+      default: 'direct_deposit',
+    },
+
+    directDeposit: {
+      accountType: { type: String, default: '' }, // checking / savings
+      bankName: { type: String, default: '' },
+      routingNumber: { type: String, default: '' },
+      accountNumberLast4: { type: String, default: '' }, // store last 4 only
+    },
+
+    /**
+     * Pay configuration
+     * - payType: hourly vs salary
+     * - payFrequency: weekly, biweekly, semimonthly, monthly
+     */
+    payType: {
+      type: String,
+      enum: ['hourly', 'salary'],
+      default: 'hourly',
+    },
+
+    hourlyRate: { type: Number, default: 0 },   // used when payType = 'hourly'
+    salaryAmount: { type: Number, default: 0 }, // annual salary when payType = 'salary'
 
     payFrequency: {
       type: String,
-      enum: ['weekly', 'biweekly', 'monthly'],
+      enum: ['weekly', 'biweekly', 'semimonthly', 'monthly'],
       default: 'biweekly',
     },
 
-    hourlyRate: { type: Number, required: false, default: 0 },
-
-
-    // ================================
-    // TAX RATES
-    // ================================
-    federalWithholdingRate: { type: Number, default: 0.18 },
-    stateWithholdingRate:   { type: Number, default: 0.05 },
-
-    // ================================
-    // PORTAL ACCESS ACCOUNTING
-    // ================================
-    hasPortalAccount: {
-      type: Boolean,
-      default: false,
+    // Hire date used for YTD context (earlier than this is effectively 0)
+    hireDate: {
+      type: Date,
+      default: Date.now,
     },
 
-    portalUserId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      default: null,
-    },
+    // optional stored “default” tax settings for employee
+    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 for 18%
+    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05
+
   },
-  {
-    timestamps: true,
-  }
+  { timestamps: true }
 );
 
 module.exports = mongoose.model('Employee', EmployeeSchema);
