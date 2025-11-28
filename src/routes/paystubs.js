@@ -179,7 +179,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
     <!-- Top check header -->
        <div class="section row">
       <div class="logo">
-        <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_PAYROLL_SERVICES.png?v=1764211664" alt="NWF Payroll Services Logo" />
+        <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_logo_for_paystubs.png?v=1764193030" />
         <div>
           <div class="brand">NWF PAYROLL SERVICES</div>
           <div class="sub-brand">PAYROLL SERVICES</div>
