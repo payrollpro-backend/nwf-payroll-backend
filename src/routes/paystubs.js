@@ -1,16 +1,12 @@
-// routes/paystubs.js
+// src/routes/paystubs.js
 const express = require('express');
 const mongoose = require('mongoose');
-const crypto = require('crypto');
-const { Schema } = mongoose;
-
-
 const PDFDocument = require('pdfkit');
 
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
 
-// Load payrollRun model if available
+// Load PayrollRun model if available
 let PayrollRun;
 try {
   PayrollRun = require('../models/PayrollRun');
@@ -43,6 +39,7 @@ function formatDate(date) {
   });
 }
 
+// HTML builder (for /:id/html preview, not used for PDF)
 function buildPaystubHtml({ stub, employee, payrollRun }) {
   const firstName = (employee && employee.firstName) || '';
   const lastName = (employee && employee.lastName) || '';
@@ -83,7 +80,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   const netFormatted = formatCurrency(net);
 
   return `
-<!type html>
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -230,6 +227,7 @@ router.get('/', async (req, res) => {
 
     res.json(paystubs);
   } catch (err) {
+    console.error('Error fetching paystubs:', err);
     res.status(500).json({ message: 'Server error fetching paystubs' });
   }
 });
@@ -247,9 +245,12 @@ router.get('/employee/:employeeId', async (req, res) => {
       return res.status(404).json({ message: 'Employee not found' });
     }
 
-    const stubs = await Paystub.find({ employee: employee._id }).sort({ payDate: -1 });
+    const stubs = await Paystub.find({ employee: employee._id }).sort({
+      payDate: -1,
+    });
     res.json(stubs);
   } catch (err) {
+    console.error('Error fetching paystubs by employee:', err);
     res.status(500).json({ message: 'Server error fetching employee paystubs' });
   }
 });
@@ -257,12 +258,14 @@ router.get('/employee/:employeeId', async (req, res) => {
 // HTML preview
 router.get('/:id/html', async (req, res) => {
   try {
-    const stub = await Paystub.findById(req.params.id)
-      .populate('employee', 'firstName lastName email externalEmployeeId');
+    const stub = await Paystub.findById(req.params.id).populate(
+      'employee',
+      'firstName lastName email externalEmployeeId'
+    );
 
     if (!stub) return res.status(404).send('Paystub not found');
 
-    const payrollRun =
+    const payrollRunDoc =
       PayrollRun && stub.payrollRun
         ? await PayrollRun.findById(stub.payrollRun)
         : null;
@@ -270,12 +273,13 @@ router.get('/:id/html', async (req, res) => {
     const html = buildPaystubHtml({
       stub,
       employee: stub.employee,
-      payrollRun: payrollRun,
+      payrollRun: payrollRunDoc,
     });
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
+    console.error('Error building paystub HTML:', err);
     res.status(500).send('Error building paystub HTML');
   }
 });
@@ -283,14 +287,16 @@ router.get('/:id/html', async (req, res) => {
 // PDF generation (pdfkit) – ADP-style check + earnings stub
 router.get('/:id/pdf', async (req, res) => {
   try {
-    const stub = await Paystub.findById(req.params.id)
-      .populate('employee', 'firstName lastName email externalEmployeeId');
+    const stub = await Paystub.findById(req.params.id).populate(
+      'employee',
+      'firstName lastName email externalEmployeeId'
+    );
 
     if (!stub) {
       return res.status(404).send('Paystub not found');
     }
 
-    const payrollRun =
+    const payrollRunDoc =
       PayrollRun && stub.payrollRun
         ? await PayrollRun.findById(stub.payrollRun)
         : null;
@@ -333,10 +339,12 @@ router.get('/:id/pdf', async (req, res) => {
     const rate = stub.hourlyRate || 0;
 
     const fileName =
-      stub.fileName || `nwf_${externalEmployeeId || 'employee'}_${payDateStr}.pdf`;
+      stub.fileName ||
+      `nwf_${externalEmployeeId || 'employee'}_${payDateStr}.pdf`;
 
     const formatNum = (n) => Number(n || 0).toFixed(2);
-        const verificationCode = stub.verificationCode || '';
+
+    const verificationCode = stub.verificationCode || '';
     const baseVerifyUrl =
       process.env.NWF_VERIFY_BASE_URL ||
       'https://nwf-payroll-backend.onrender.com/api/verify-paystub';
@@ -344,15 +352,14 @@ router.get('/:id/pdf', async (req, res) => {
       ? `${baseVerifyUrl}/${verificationCode}`
       : baseVerifyUrl;
 
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
       `attachment; filename="${fileName}"`
     );
 
-    const  = new PDFument({ size: 'LETTER', margin: 36 });
-    .pipe(res);
+    const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
+    doc.pipe(res);
 
     // =======================
     // TOP CHECK AREA (ADP-like)
@@ -360,45 +367,40 @@ router.get('/:id/pdf', async (req, res) => {
 
     let y = 36;
 
-    // "Logo" / Brand block – if you later add an image file to the repo,
-    // you can replace this with .image('path/to/logo.png', 36, y, { width: 120 })
-    .fontSize(16).text('NWF PAYROLL SERVICES', 36, y);
+    // Brand block
+    doc.fontSize(16).text('NWF PAYROLL SERVICES', 36, y);
     y += 16;
-    .fontSize(9).text('PAYROLL SERVICES', 36, y);
+    doc.fontSize(9).text('PAYROLL SERVICES', 36, y);
 
     // Check info box (right)
-    .fontSize(9);
-    .text('Check Date:', 400, 40);
-    .text(payDateStr, 480, 40);
-    .text('Amount:', 400, 55);
-    .text(`$${formatNum(net)}`, 480, 55);
+    doc.fontSize(9);
+    doc.text('Check Date:', 400, 40);
+    doc.text(payDateStr, 480, 40);
+    doc.text('Amount:', 400, 55);
+    doc.text(`$${formatNum(net)}`, 480, 55);
 
     // Payee lines
     y = 82;
-    .fontSize(10).text('Pay to the Order of', 36, y);
-    .moveTo(140, y + 10).lineTo(380, y + 10).stroke();
-    .text(employeeFullName, 145, y);
+    doc.fontSize(10).text('Pay to the Order of', 36, y);
+    doc.moveTo(140, y + 10).lineTo(380, y + 10).stroke();
+    doc.text(employeeFullName, 145, y);
 
-    // Written-out amount placeholder line
+    // Written amount placeholder
     y += 24;
-    .text('Amount in Words', 36, y);
-    .moveTo(120, y + 10).lineTo(560, y + 10).stroke();
+    doc.text('Amount in Words', 36, y);
+    doc.moveTo(120, y + 10).lineTo(560, y + 10).stroke();
 
-    // Memo and signature
+    // Memo + signature
     y += 28;
-    .text('Memo', 36, y);
-    .moveTo(70, y + 10).lineTo(320, y + 10).stroke();
+    doc.text('Memo', 36, y);
+    doc.moveTo(70, y + 10).lineTo(320, y + 10).stroke();
 
-    .text('AUTHORIZED SIGNATURE', 360, y + 12, { align: 'right' });
-    .moveTo(320, y + 10).lineTo(560, y + 10).stroke();
-
-    // Little MICR-style line (visual only)
-    y += 40;
-    .fontSize(9).text('"OO 1080"', 260, y, { align: 'center' });
+    doc.text('AUTHORIZED SIGNATURE', 360, y + 12, { align: 'right' });
+    doc.moveTo(320, y + 10).lineTo(560, y + 10).stroke();
 
     // Tear line
-    y += 20;
-    .moveTo(36, y).lineTo(576, y).dash(2, { space: 2 }).stroke().undash();
+    y += 40;
+    doc.moveTo(36, y).lineTo(576, y).dash(2, { space: 2 }).stroke().undash();
 
     // =======================
     // BOTTOM EARNINGS STUB
@@ -407,9 +409,9 @@ router.get('/:id/pdf', async (req, res) => {
     y += 16;
 
     // Employer + employee info
-    .fontSize(10).text(companyName, 36, y);
+    doc.fontSize(10).text(companyName, 36, y);
     y += 12;
-    .text(companyAddressLine1, 36, y);
+    doc.text(companyAddressLine1, 36, y);
     y += 12;
     doc.text(companyAddressLine2, 36, y);
 
@@ -421,7 +423,11 @@ router.get('/:id/pdf', async (req, res) => {
 
     // Pay period info under employee block if we have payrollRun
     let rY = empBlockTop + 42;
-    if (payrollRunDoc && payrollRunDoc.periodStart && payrollRunDoc.periodEnd) {
+    if (
+      payrollRunDoc &&
+      payrollRunDoc.periodStart &&
+      payrollRunDoc.periodEnd
+    ) {
       const pb = new Date(payrollRunDoc.periodStart)
         .toISOString()
         .slice(0, 10);
@@ -455,7 +461,7 @@ router.get('/:id/pdf', async (req, res) => {
     doc.text(formatNum(gross), 330, y, { width: 80, align: 'right' });
     doc.text(formatNum(ytdGross), 410, y, { width: 80, align: 'right' });
 
-    // Total earnings row (if you ever add overtime/bonus, you can sum here)
+    // Total earnings row
     y += 16;
     doc.fontSize(9).text('Total Earnings', 36, y);
     doc.text(formatNum(gross), 330, y, { width: 80, align: 'right' });
@@ -503,23 +509,66 @@ router.get('/:id/pdf', async (req, res) => {
     doc.fontSize(9).text('YTD Net Pay:', 36, y);
     doc.text(`$${formatNum(ytdNet)}`, 170, y, { width: 80, align: 'right' });
 
-    // Footer company block
+    // ===== Company Footer Block (ADP-Style) =====
     y += 32;
-    doc.fontSize(8).text(companyName, 36, y);
-    doc.text(companyAddressLine1, 36, y + 10);
-    doc.text(companyAddressLine2, 36, y + 20);
-    [ FOOTER COMPANY BLOCK ]
-⬇️ INSERT VERIFICATION BLOCK HERE
-doc.end();
+    doc
+      .fontSize(9)
+      .fillColor('#111827')
+      .text(companyName, 36, y);
 
+    doc.moveDown(0.2);
+    doc
+      .fontSize(8)
+      .fillColor('#4B5563')
+      .text(companyAddressLine1, 36, doc.y);
+    doc
+      .fontSize(8)
+      .text(companyAddressLine2, 36, doc.y);
 
+    doc.moveDown(0.3);
+    doc
+      .fontSize(7)
+      .fillColor('#6B7280')
+      .text(
+        'This statement has been prepared by NWF Payroll Services.',
+        36,
+        doc.y
+      );
+
+    doc.moveDown(1.2);
+
+    // ===== Verification Block =====
+    if (verificationCode) {
+      doc
+        .fontSize(8)
+        .fillColor('#6B7280')
+        .text('Verification', 36, doc.y);
+
+      doc.moveDown(0.3);
+      doc
+        .fontSize(9)
+        .fillColor('#111827')
+        .text(`Code: ${verificationCode}`, 36, doc.y);
+
+      doc.moveDown(0.3);
+      doc
+        .fontSize(8)
+        .fillColor('#6B7280')
+        .text('Verify online at:', 36, doc.y);
+      doc
+        .fontSize(9)
+        .fillColor('#111827')
+        .text(verificationUrl, 120, doc.y - 2);
+    }
+
+    // Reset color and finalize
+    doc.fillColor('#000000');
     doc.end();
   } catch (err) {
     console.error('Error generating paystub PDF (ADP-style):', err);
     res.status(500).send('Error generating paystub PDF');
   }
 });
-
 
 // Get single stub JSON
 router.get('/:id', async (req, res) => {
@@ -528,9 +577,12 @@ router.get('/:id', async (req, res) => {
       'employee',
       'firstName lastName email externalEmployeeId'
     );
-    if (!stub) return res.status(404).json({ message: 'Paystub not found' });
+    if (!stub) {
+      return res.status(404).json({ message: 'Paystub not found' });
+    }
     res.json(stub);
   } catch (err) {
+    console.error('Error fetching paystub by id:', err);
     res.status(500).json({ message: 'Server error fetching paystub' });
   }
 });
