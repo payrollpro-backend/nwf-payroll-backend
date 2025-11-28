@@ -1,11 +1,14 @@
+// src/routes/employees.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const Employee = require('../models/Employee');
-const { sendWelcomeEmail } = require('../utils/email'); // keep if you have it
-const { getTaxDefaultsForState } = require('../utils/taxConfig');
 
 const router = express.Router();
 
+/**
+ * Generate a random temp password so we can set passwordHash
+ * (employees don't have to log in yet, but the schema expects a hash).
+ */
 function generateTempPassword(len = 10) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
   let out = '';
@@ -15,97 +18,111 @@ function generateTempPassword(len = 10) {
   return out;
 }
 
-async function generateExternalEmployeeId() {
-  let externalId;
-  let exists = true;
-
-  while (exists) {
-    const rand = Math.floor(100000000 + Math.random() * 900000000); // 9-digit
-    externalId = `Emp_ID_${rand}`;
-    exists = await Employee.exists({ externalEmployeeId: externalId });
-  }
-  return externalId;
+/**
+ * External Employee ID format:
+ *   Emp_ID_938203948
+ */
+function generateExternalEmployeeId() {
+  const num = Math.floor(100000000 + Math.random() * 900000000); // 9 digits
+  return `Emp_ID_${num}`;
 }
 
-// Create payroll employee
+/**
+ * POST /api/employees
+ * Create a new employee (used by admin create-employee.html)
+ */
 router.post('/', async (req, res) => {
   try {
     const {
       firstName,
       lastName,
       email,
-      phone,
       companyName,
       hourlyRate,
-      address,
-      dateOfBirth,
+      address = {},
+      dob,
       ssnLast4,
       payMethod,
-      directDeposit,
-      federalWithholdingRate,
-      stateWithholdingRate,
-      employerId, // optional for future multi-tenant
-    } = req.body;
+      directDeposit = {},
+    } = req.body || {};
 
-    if (!firstName || !lastName || !email) {
-      return res.status(400).json({ error: 'firstName, lastName and email are required.' });
+    if (!firstName || !lastName || !email || !companyName) {
+      return res.status(400).json({
+        error: 'firstName, lastName, email, and companyName are required',
+      });
     }
 
+    if (!hourlyRate || isNaN(hourlyRate)) {
+      return res.status(400).json({
+        error: 'hourlyRate must be a valid number',
+      });
+    }
+
+    // Basic uniqueness check on email
     const existing = await Employee.findOne({ email });
     if (existing) {
-      return res.status(400).json({ error: 'Email already in use.' });
+      return res.status(400).json({ error: 'An employee with this email already exists' });
     }
 
-    const defaults = getTaxDefaultsForState(address?.state);
-    const fedRate = federalWithholdingRate ?? defaults.federalRate;
-    const stRate = stateWithholdingRate ?? defaults.stateRate;
-
+    // Create password hash (even if employees never log in directly yet)
     const tempPassword = generateTempPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
-    const externalEmployeeId = await generateExternalEmployeeId();
+
+    const externalEmployeeId = generateExternalEmployeeId();
 
     const employee = await Employee.create({
-      employer: employerId || null,
       firstName,
       lastName,
       email,
-      phone,
-      address,
-      dateOfBirth,
-      ssnLast4,
-      payMethod,
-      directDeposit,
-      companyName: companyName || 'NWF Payroll Client',
-      hourlyRate: hourlyRate || 0,
-      federalWithholdingRate: fedRate,
-      stateWithholdingRate: stRate,
-      externalEmployeeId,
+      companyName,
+      hourlyRate,
       role: 'employee',
+      externalEmployeeId,
+
+      address: {
+        line1: address.line1 || '',
+        line2: address.line2 || '',
+        city: address.city || '',
+        state: address.state || '',
+        zip: address.zip || '',
+      },
+
+      dob: dob || null,
+      ssnLast4: ssnLast4 || '',
+
+      payMethod: payMethod || 'direct_deposit',
+      directDeposit: {
+        bankName: directDeposit.bankName || '',
+        accountType: directDeposit.accountType || '',
+        routingNumber: directDeposit.routingNumber || '',
+        accountNumber: directDeposit.accountNumber || '',
+      },
+
       passwordHash,
     });
 
-    try {
-      if (sendWelcomeEmail) {
-        await sendWelcomeEmail(employee.email, tempPassword);
-      }
-    } catch (e) {
-      console.error('sendWelcomeEmail error:', e.message);
-    }
+    // Do NOT send password or passwordHash back
+    const safe = employee.toObject();
+    delete safe.passwordHash;
 
-    res.status(201).json({ employee, tempPassword });
+    res.status(201).json(safe);
   } catch (err) {
-    console.error('employee create error:', err);
-    res.status(400).json({ error: err.message });
+    console.error('Create employee error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create employee' });
   }
 });
 
-// List employees
+/**
+ * GET /api/employees
+ * Return all employees (for admin pages, run-payroll, etc.)
+ */
 router.get('/', async (req, res) => {
   try {
-    const employees = await Employee.find({ role: 'employee' }).sort({ createdAt: -1 });
+    const employees = await Employee.find().sort({ createdAt: -1 }).lean();
     res.json(employees);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('List employees error:', err);
+    res.status(500).json({ error: err.message || 'Failed to load employees' });
   }
 });
 
