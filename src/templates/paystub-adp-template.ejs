@@ -1,399 +1,399 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Paystub - <%= employeeFullName %></title>
-  <style>
-    * {
-      box-sizing: border-box;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    }
+  <meta charset="utf-8" />
+  <title>Paystub - <%= employeeFullName %></title>
+  <style>
+    * {
+      box-sizing: border-box;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
 
-    body {
-      margin: 0;
-      padding: 0;
-      font-size: 11px;
-      color: #222;
-    }
+    body {
+      margin: 0;
+      padding: 0;
+      font-size: 11px;
+      color: #222;
+    }
 
-    .page {
-      position: relative;
-      width: 100%;
-      /* Resetting height since the content will drive it */
-      min-height: 1000px; 
-      overflow: hidden;
-      
-      /* --- CRITICAL FIX: APPLY BACKGROUND VIA CSS PROPERTY --- */
-      /* This uses the Base64 data URI provided by the backend */
-      background-image: url('<%= backgroundUrl %>');
-      background-repeat: no-repeat;
-      background-position: center top;
-      /* Ensure the image covers the width of the page */
-      background-size: 100% auto; 
-      /* ----------------------------------------------------- */
-    }
+    .page {
+      position: relative;
+      width: 100%;
+      min-height: 3300px; /* tall enough for a full letter page */
+      overflow: hidden;
+    }
 
-    /* The .page-bg element is removed and the background is moved to .page */
+    .page-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
 
-    .page-content {
-      position: relative;
-      z-index: 1;
-      /* Top padding to place content below the graphic element */
-      padding: 70px 70px 40px 70px; 
-    }
+    .page-content {
+      position: relative;
+      z-index: 1;
+      padding: 70px 70px 40px 70px; /* top padding so content sits nicely under the logo band */
+    }
 
-    .card {
-      border: 1px solid #d0d0d0;
-      background-color: rgba(255, 255, 255, 0.96);
-      padding: 14px 14px 10px;
-      margin-bottom: 14px;
-    }
+    .card {
+      border: 1px solid #d0d0d0;
+      background-color: rgba(255, 255, 255, 0.96);
+      padding: 14px 14px 10px;
+      margin-bottom: 14px;
+    }
 
-    .header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      border-bottom: 2px solid #444;
-      padding-bottom: 6px;
-      margin-bottom: 8px;
-    }
+    .header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid #444;
+      padding-bottom: 6px;
+      margin-bottom: 8px;
+    }
 
-    .company-block {
-      max-width: 55%;
-    }
+    .company-block {
+      max-width: 55%;
+    }
 
-    .company-name {
-      font-size: 16px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-    }
+    .company-name {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
 
-    .company-sub {
-      font-size: 10px;
-      text-transform: uppercase;
-      color: #555;
-    }
+    .company-sub {
+      font-size: 10px;
+      text-transform: uppercase;
+      color: #555;
+    }
 
-    .company-address {
-      margin-top: 4px;
-      font-size: 10px;
-      line-height: 1.3;
-    }
+    .company-address {
+      margin-top: 4px;
+      font-size: 10px;
+      line-height: 1.3;
+    }
 
-    .check-block {
-      text-align: right;
-      font-size: 10px;
-    }
+    .check-block {
+      text-align: right;
+      font-size: 10px;
+    }
 
-    .label {
-      font-size: 9px;
-      text-transform: uppercase;
-      color: #777;
-      letter-spacing: 0.08em;
-    }
+    .label {
+      font-size: 9px;
+      text-transform: uppercase;
+      color: #777;
+      letter-spacing: 0.08em;
+    }
 
-    .value {
-      font-size: 11px;
-      font-weight: 600;
-    }
+    .value {
+      font-size: 11px;
+      font-weight: 600;
+    }
 
-    .netpay-big {
-      font-size: 15px;
-      font-weight: 700;
-      margin-top: 4px;
-    }
+    .netpay-big {
+      font-size: 15px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
 
-    .check-line {
-      margin: 10px 0 4px;
-      border-top: 1px dashed #aaa;
-    }
+    .check-line {
+      margin: 10px 0 4px;
+      border-top: 1px dashed #aaa;
+    }
 
-    .payee-line {
-      font-size: 10px;
-      margin-top: 4px;
-    }
+    .payee-line {
+      font-size: 10px;
+      margin-top: 4px;
+    }
 
-    .section {
-      border: 1px solid #ddd;
-      margin-bottom: 8px;
-    }
+    .section {
+      border: 1px solid #ddd;
+      margin-bottom: 8px;
+    }
 
-    .section-header {
-      background: #f4f4f4;
-      padding: 4px 8px;
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      border-bottom: 1px solid #ddd;
-    }
+    .section-header {
+      background: #f4f4f4;
+      padding: 4px 8px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid #ddd;
+    }
 
-    .section-body {
-      padding: 6px 8px;
-    }
+    .section-body {
+      padding: 6px 8px;
+    }
 
-    .two-col-row {
-      display: flex;
-      gap: 16px;
-    }
+    .two-col-row {
+      display: flex;
+      gap: 16px;
+    }
 
-    .col {
-      flex: 1;
-    }
+    .col {
+      flex: 1;
+    }
 
-    .info-grid {
-      display: grid;
-      grid-template-columns: 110px 1fr;
-      row-gap: 2px;
-      column-gap: 6px;
-      font-size: 10px;
-    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      row-gap: 2px;
+      column-gap: 6px;
+      font-size: 10px;
+    }
 
-    .info-label {
-      font-weight: 600;
-      color: #555;
-    }
+    .info-label {
+      font-weight: 600;
+      color: #555;
+    }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 10px;
-    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
 
-    th, td {
-      padding: 3px 4px;
-      border-bottom: 1px solid #eee;
-      text-align: right;
-      white-space: nowrap;
-    }
+    th, td {
+      padding: 3px 4px;
+      border-bottom: 1px solid #eee;
+      text-align: right;
+      white-space: nowrap;
+    }
 
-    th:first-child,
-    td:first-child {
-      text-align: left;
-    }
+    th:first-child,
+    td:first-child {
+      text-align: left;
+    }
 
-    th {
-      font-size: 9px;
-      text-transform: uppercase;
-      color: #666;
-      border-bottom: 1px solid #ccc;
-    }
+    th {
+      font-size: 9px;
+      text-transform: uppercase;
+      color: #666;
+      border-bottom: 1px solid #ccc;
+    }
 
-    tfoot td {
-      font-weight: 700;
-      border-top: 1px solid #ccc;
-    }
+    tfoot td {
+      font-weight: 700;
+      border-top: 1px solid #ccc;
+    }
 
-    .ytd-summary {
-      display: flex;
-      gap: 12px;
-      font-size: 10px;
-    }
+    .ytd-summary {
+      display: flex;
+      gap: 12px;
+      font-size: 10px;
+    }
 
-    .ytd-box {
-      flex: 1;
-      border: 1px solid #ddd;
-      padding: 4px 6px;
-      background-color: rgba(255, 255, 255, 0.95);
-    }
+    .ytd-box {
+      flex: 1;
+      border: 1px solid #ddd;
+      padding: 4px 6px;
+      background-color: rgba(255, 255, 255, 0.95);
+    }
 
-    .ytd-title {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: #666;
-      margin-bottom: 2px;
-    }
+    .ytd-title {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #666;
+      margin-bottom: 2px;
+    }
 
-    .ytd-value {
-      font-size: 12px;
-      font-weight: 700;
-    }
+    .ytd-value {
+      font-size: 12px;
+      font-weight: 700;
+    }
 
-    .footnote {
-      margin-top: 6px;
-      font-size: 8px;
-      color: #777;
-    }
-  </style>
+    .footnote {
+      margin-top: 6px;
+      font-size: 8px;
+      color: #777;
+    }
+  </style>
 </head>
 <body>
-  <div class="page">
-    
+  <div class="page">
+    <!-- Background image from www.nwfpayroll.com -->
+    <img src="<%= backgroundUrl %>" class="page-bg" />
 
-    <div class="page-content">
-      <!-- MAIN PAYSTUB CARD -->
-      <div class="card">
-        <!-- Header / Check Summary -->
-        <div class="header-row">
-          <div class="company-block">
-            <div class="company-name">NSE MANAGEMENT INC</div>
-            <div class="company-sub">PAYROLL SERVICES BY NWF PAYROLL</div>
-            <div class="company-address">
-              4711 Nutmeg Way SW<br/>
-              Lilburn, GA 30047
-            </div>
-          </div>
-          <div class="check-block">
-            <div>
-              <span class="label">Check Date</span><br/>
-              <span class="value"><%= payDateFormatted %></span>
-            </div>
-            <div style="margin-top: 4px;">
-              <span class="label">Check Number</span><br/>
-              <span class="value"><%= checkNumber %></span>
-            </div>
-            <div class="netpay-big">
-              NET PAY: $<%= (netPay || 0).toFixed(2) %>
-            </div>
-          </div>
-        </div>
+    <div class="page-content">
+      <!-- MAIN PAYSTUB CARD -->
+      <div class="card">
+        <!-- Header / Check Summary -->
+        <div class="header-row">
+          <div class="company-block">
+            <div class="company-name">NSE MANAGEMENT INC</div>
+            <div class="company-sub">PAYROLL SERVICES BY NWF PAYROLL</div>
+            <div class="company-address">
+              4711 Nutmeg Way SW<br/>
+              Lilburn, GA 30047
+            </div>
+          </div>
+          <div class="check-block">
+            <div>
+              <span class="label">Check Date</span><br/>
+              <span class="value"><%= payDateFormatted %></span>
+            </div>
+            <div style="margin-top: 4px;">
+              <span class="label">Check Number</span><br/>
+              <span class="value"><%= checkNumber %></span>
+            </div>
+            <div class="netpay-big">
+              NET PAY: $<%= (netPay || 0).toFixed(2) %>
+            </div>
+          </div>
+        </div>
 
-        <!-- Payee line (check-style) -->
-        <div class="check-line"></div>
-        <div class="payee-line">
-          Pay to the order of <strong><%= employeeFullName %></strong>
-          &nbsp;&nbsp; $<%= (netPay || 0).toFixed(2) %>
-        </div>
+        <!-- Payee line (check-style) -->
+        <div class="check-line"></div>
+        <div class="payee-line">
+          Pay to the order of <strong><%= employeeFullName %></strong>
+          &nbsp;&nbsp; $<%= (netPay || 0).toFixed(2) %>
+        </div>
 
-        <!-- Employee / Pay Info -->
-        <div class="section" style="margin-top: 8px;">
-          <div class="section-header">Employee &amp; Pay Information</div>
-          <div class="section-body">
-            <div class="info-grid">
-              <div class="info-label">Employee Name</div>
-              <div><%= employeeFullName %></div>
+        <!-- Employee / Pay Info -->
+        <div class="section" style="margin-top: 8px;">
+          <div class="section-header">Employee &amp; Pay Information</div>
+          <div class="section-body">
+            <div class="info-grid">
+              <div class="info-label">Employee Name</div>
+              <div><%= employeeFullName %></div>
 
-              <div class="info-label">Employee ID</div>
-              <div><%= externalEmployeeId || '—' %></div>
+              <div class="info-label">Employee ID</div>
+              <div><%= externalEmployeeId || '—' %></div>
 
-              <div class="info-label">Email</div>
-              <div><%= employeeEmail %></div>
+              <div class="info-label">Email</div>
+              <div><%= employeeEmail %></div>
 
-              <div class="info-label">Pay Period</div>
-              <div><%= payPeriodLabel %></div>
+              <div class="info-label">Pay Period</div>
+              <div><%= payPeriodLabel %></div>
 
-              <div class="info-label">Bank Name</div>
-              <div><%= bankName %></div>
+              <div class="info-label">Bank Name</div>
+              <div><%= bankName %></div>
 
-              <div class="info-label">Account Last 4</div>
-              <div><%= bankAccountLast4 || '—' %></div>
+              <div class="info-label">Account Last 4</div>
+              <div><%= bankAccountLast4 || '—' %></div>
 
-              <div class="info-label">Verification Code</div>
-              <div><%= verificationCode %></div>
-            </div>
-          </div>
-        </div>
+              <div class="info-label">Verification Code</div>
+              <div><%= verificationCode %></div>
+            </div>
+          </div>
+        </div>
 
-        <!-- Earnings + Deductions -->
-        <div class="section">
-          <div class="section-header">Earnings &amp; Deductions</div>
-          <div class="section-body">
-            <div class="two-col-row">
-              <!-- Earnings -->
-              <div class="col">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Earnings</th>
-                      <th>Rate</th>
-                      <th>Hours</th>
-                      <th>Current</th>
-                      <th>YTD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Regular Pay</td>
-                      <td><%= regularRateFormatted %></td>
-                      <td><%= regularHoursFormatted %></td>
-                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colspan="3">Total Earnings</td>
-                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+        <!-- Earnings + Deductions -->
+        <div class="section">
+          <div class="section-header">Earnings &amp; Deductions</div>
+          <div class="section-body">
+            <div class="two-col-row">
+              <!-- Earnings -->
+              <div class="col">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Earnings</th>
+                      <th>Rate</th>
+                      <th>Hours</th>
+                      <th>Current</th>
+                      <th>YTD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Regular Pay</td>
+                      <td><%= regularRateFormatted %></td>
+                      <td><%= regularHoursFormatted %></td>
+                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colspan="3">Total Earnings</td>
+                      <td>$<%= (grossPay || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdGross || 0).toFixed(2) %></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
 
-              <!-- Deductions -->
-              <div class="col">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Deductions</th>
-                      <th>Current</th>
-                      <th>YTD</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Federal Income Tax</td>
-                      <td>$<%= (federalIncomeTax || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdFederalIncomeTax || 0).toFixed(2) %></td>
-                    </tr>
-                    <tr>
-                      <td>Social Security</td>
-                      <td>$<%= (socialSecurity || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdSocialSecurity || 0).toFixed(2) %></td>
-                    </tr>
-                    <tr>
-                      <td>Medicare</td>
-                      <td>$<%= (medicare || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdMedicare || 0).toFixed(2) %></td>
-                    </tr>
-                    <tr>
-                      <td>State Income Tax</td>
-                      <td>$<%= (stateIncomeTax || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdStateIncomeTax || 0).toFixed(2) %></td>
-                    </tr>
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td>Total Taxes</td>
-                      <td>$<%= (totalTaxes || 0).toFixed(2) %></td>
-                      <td>$<%= (ytdTotalTaxes || 0).toFixed(2) %></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
-          </div>
-          </div>
+              <!-- Deductions -->
+              <div class="col">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Deductions</th>
+                      <th>Current</th>
+                      <th>YTD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Federal Income Tax</td>
+                      <td>$<%= (federalIncomeTax || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdFederalIncomeTax || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>Social Security</td>
+                      <td>$<%= (socialSecurity || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdSocialSecurity || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>Medicare</td>
+                      <td>$<%= (medicare || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdMedicare || 0).toFixed(2) %></td>
+                    </tr>
+                    <tr>
+                      <td>State Income Tax</td>
+                      <td>$<%= (stateIncomeTax || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdStateIncomeTax || 0).toFixed(2) %></td>
+                    </tr>
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td>Total Taxes</td>
+                      <td>$<%= (totalTaxes || 0).toFixed(2) %></td>
+                      <td>$<%= (ytdTotalTaxes || 0).toFixed(2) %></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <!-- YTD Summary -->
-        <div class="section">
-          <div class="section-header">Year-to-Date Summary</div>
-          <div class="section-body">
-            <div class="ytd-summary">
-              <div class="ytd-box">
-                <div class="ytd-title">YTD Gross Pay</div>
-                <div class="ytd-value">$<%= (ytdGross || 0).toFixed(2) %></div>
-              </div>
-              <div class="ytd-box">
-                <div class="ytd-title">YTD Total Taxes</div>
-                <div class="ytd-value">$<%= (ytdTotalTaxes || 0).toFixed(2) %></div>
-              </div>
-              <div class="ytd-box">
-                <div class="ytd-title">YTD Net Pay</div>
-                <div class="ytd-value">$<%= (ytdNet || 0).toFixed(2) %></div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <!-- YTD Summary -->
+        <div class="section">
+          <div class="section-header">Year-to-Date Summary</div>
+          <div class="section-body">
+            <div class="ytd-summary">
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Gross Pay</div>
+                <div class="ytd-value">$<%= (ytdGross || 0).toFixed(2) %></div>
+              </div>
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Total Taxes</div>
+                <div class="ytd-value">$<%= (ytdTotalTaxes || 0).toFixed(2) %></div>
+              </div>
+              <div class="ytd-box">
+                <div class="ytd-title">YTD Net Pay</div>
+                <div class="ytd-value">$<%= (ytdNet || 0).toFixed(2) %></div>
+              </div>
+            </div>
+          </div>
+        </div>
 
-        <!-- Footnote -->
-        <div class="footnote">
-          This statement has been prepared by NWF Payroll Services. Verify this paystub at
-          https://nwf-payroll-backend.onrender.com/api/verify-paystub/<%= verificationCode %>
-          </div>
-      </div><!-- /.card -->
-    </div><!-- /.page-content -->
-  </div><!-- /.page -->
+        <!-- Footnote -->
+        <div class="footnote">
+          This statement has been prepared by NWF Payroll Services. Verify this paystub at
+          https://nwf-payroll-backend.onrender.com/api/verify-paystub/<%= verificationCode %>
+        </div>
+      </div><!-- /.card -->
+    </div><!-- /.page-content -->
+  </div><!-- /.page -->
 </body>
 </html>
+
+
