@@ -5,52 +5,17 @@ const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 
+// 🔹 NEW: import the payroll engine (make sure src/payrollEngine exists)
+const { calculatePaycheck } = require('../payrollEngine');
+
 const router = express.Router();
-
-/**
- * Simple tax helper – replace with real tax logic later.
- * Uses employee-level withholding rates if present,
- * otherwise falls back to basic defaults.
- */
-function calculateTaxes(employee, gross) {
-  const g = Number(gross) || 0;
-
-  // Use stored employee rates if present, or defaults
-  const fedRate =
-    typeof employee.federalWithholdingRate === 'number'
-      ? employee.federalWithholdingRate
-      : 0.18; // 18% default
-
-  const stateRate =
-    typeof employee.stateWithholdingRate === 'number'
-      ? employee.stateWithholdingRate
-      : 0.05; // 5% default
-
-  const federalIncomeTax = g * fedRate;
-  const stateIncomeTax = g * stateRate;
-
-  // Standard FICA (you can later make caps, etc.)
-  const socialSecurity = g * 0.062;
-  const medicare = g * 0.0145;
-
-  const totalTaxes =
-    federalIncomeTax + stateIncomeTax + socialSecurity + medicare;
-  const netPay = g - totalTaxes;
-
-  return {
-    federalIncomeTax,
-    stateIncomeTax,
-    socialSecurity,
-    medicare,
-    totalTaxes,
-    netPay,
-  };
-}
 
 /**
  * POST /api/payroll/run
  * Create a single payroll run + paystub for one employee,
  * including YTD calculations based on calendar year + hire date.
+ *
+ * Now uses the NWF payroll engine for federal/FICA/GA state taxes.
  */
 router.post('/run', async (req, res) => {
   try {
@@ -80,18 +45,10 @@ router.post('/run', async (req, res) => {
 
     const gross = Number(grossPay);
     if (Number.isNaN(gross) || gross <= 0) {
-      return res.status(400).json({ error: 'grossPay must be a positive number' });
+      return res
+        .status(400)
+        .json({ error: 'grossPay must be a positive number' });
     }
-
-    // Use our tax helper to get breakdown + net
-    const {
-      federalIncomeTax,
-      stateIncomeTax,
-      socialSecurity,
-      medicare,
-      totalTaxes,
-      netPay,
-    } = calculateTaxes(employee, gross);
 
     // Normalize period fields (so your DB uses consistent names)
     const finalPeriodStart = periodStart || payPeriodStart || null;
@@ -108,6 +65,7 @@ router.post('/run', async (req, res) => {
     const hireDate = employee.hireDate ? new Date(employee.hireDate) : null;
     const ytdStart = hireDate && hireDate > yearStart ? hireDate : yearStart;
 
+    // Aggregate previous payroll runs in the same calendar year
     const prevAgg = await PayrollRun.aggregate([
       {
         $match: {
@@ -139,21 +97,80 @@ router.post('/run', async (req, res) => {
       taxes: 0,
     };
 
+    // ---------- FEED DATA INTO THE NEW PAYROLL ENGINE ----------
+
+    // Hours / rate:
+    const hours = Number(hoursWorked) || 0;
+    // Prefer stored hourlyRate; if not present but we have hours, derive from gross
+    const rate =
+      typeof employee.hourlyRate === 'number' && employee.hourlyRate > 0
+        ? employee.hourlyRate
+        : hours > 0
+        ? gross / hours
+        : 0;
+
+    // Pay frequency – default to biweekly if not on employee
+    const payFrequency = employee.payFrequency || 'biweekly';
+
+    // Filing status – default to single if not on employee
+    const filingStatus = employee.filingStatus || 'single';
+
+    // State – try to infer from employee fields, default to GA for now
+    const stateCode =
+      employee.stateCode ||
+      employee.state ||
+      (employee.address && employee.address.state) ||
+      'GA';
+
+    // Approximate YTD Social Security wages for cap logic:
+    // prev.ss is YTD SS TAX; convert to wages by dividing by 6.2%
+    const ytdSocialSecurityWages =
+      prev.ss && prev.ss > 0 ? prev.ss / 0.062 : 0;
+
+    // If you later track real pre-tax (401k, health), pass it here
+    const preTaxDeductions = 0;
+
+    // 🔹 Call the new engine
+    const engineResult = calculatePaycheck({
+      employeeId: employee._id.toString(),
+      hours,
+      rate,
+      payFrequency,
+      filingStatus,
+      stateCode,
+      ytdSocialSecurityWages,
+      preTaxDeductions,
+    });
+
+    // engineResult contains: { gross, deductions: {...}, netPay }
+    const {
+      deductions: {
+        federalIncomeTax,
+        stateIncomeTax,
+        socialSecurity,
+        medicare,
+        total: totalTaxes,
+      },
+      netPay,
+    } = engineResult;
+
     // ---------- Create payroll run with YTD snapshot ----------
+
     const payrollRun = await PayrollRun.create({
       employee: employee._id,
       employer: employee.employer || null,
 
       // freeze pay settings at the time of the run (if present on Employee)
       payType: employee.payType || 'hourly',
-      payFrequency: employee.payFrequency || 'biweekly',
+      payFrequency,
 
       periodStart: finalPeriodStart ? new Date(finalPeriodStart) : null,
       periodEnd: finalPeriodEnd ? new Date(finalPeriodEnd) : null,
       payDate: payDateObj,
-      hoursWorked: Number(hoursWorked) || 0,
-      hourlyRate: employee.hourlyRate || 0,
+      hoursWorked: hours,
+      hourlyRate: rate,
 
+      // Use the original gross input (aligned with engineResult.gross)
       grossPay: gross,
       netPay,
       federalIncomeTax,
@@ -175,6 +192,7 @@ router.post('/run', async (req, res) => {
     });
 
     // ---------- Create Paystub record ----------
+
     // Prefer externalEmployeeId if you’re using that Emp_ID_XXXXXXXX style
     const baseEmpId =
       employee.externalEmployeeId ||
@@ -182,57 +200,4 @@ router.post('/run', async (req, res) => {
       employee._id.toString();
 
     const payDatePart = payDateObj.toISOString().slice(0, 10); // YYYY-MM-DD
-    const fileName = `nwf_${baseEmpId}_${payDatePart}.pdf`;
-
-    const paystub = await Paystub.create({
-      employee: employee._id,
-      payrollRun: payrollRun._id,
-      payDate: payDateObj,
-      fileName,
-      // you can also copy YTD onto the paystub if you want it frozen there too
-      ytdGross: payrollRun.ytdGross,
-      ytdNet: payrollRun.ytdNet,
-      ytdFederalIncomeTax: payrollRun.ytdFederalIncomeTax,
-      ytdStateIncomeTax: payrollRun.ytdStateIncomeTax,
-      ytdSocialSecurity: payrollRun.ytdSocialSecurity,
-      ytdMedicare: payrollRun.ytdMedicare,
-      ytdTotalTaxes: payrollRun.ytdTotalTaxes,
-    });
-
-    res.status(201).json({ payrollRun, paystub });
-  } catch (err) {
-    console.error('payroll run error:', err);
-    res.status(400).json({ error: err.message });
-  }
-});
-
-/**
- * Shared handler to list payroll runs
- */
-async function listRunsHandler(req, res) {
-  try {
-    const runs = await PayrollRun.find()
-      .populate('employee')
-      .sort({ createdAt: -1 })
-      .lean();
-
-    res.json(runs);
-  } catch (err) {
-    console.error('list payroll runs error:', err);
-    res.status(500).json({ error: err.message });
-  }
-}
-
-/**
- * GET /api/payroll
- * List all payroll runs
- */
-router.get('/', listRunsHandler);
-
-/**
- * GET /api/payroll/runs
- * Alias – in case frontend calls /runs
- */
-router.get('/runs', listRunsHandler);
-
-module.exports = router;
+    const fileName = `nwf_${baseEmp_
