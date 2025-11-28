@@ -37,6 +37,8 @@ app.use('/api/employers', employerRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes); // <-- mounted once
+app.use('/api/verify-paystub', verifyRoutes);
+
 
 // === DEFAULT ADMIN SEEDER ===
 async function ensureDefaultAdmin() {
