@@ -19,7 +19,7 @@
     .page {
       position: relative;
       width: 100%;
-      min-height: 1056px; /* ~11in at 96dpi */
+      min-height: 1056px; /* ~11 in at 96dpi */
       overflow: hidden;
     }
 
@@ -65,6 +65,7 @@
     .nwf-title {
       font-weight: 700;
     }
+
     .nwf-subtitle {
       font-size: 9px;
       text-transform: uppercase;
@@ -182,7 +183,6 @@
       font-weight: 700;
     }
 
-    /* bottom stub copy */
     .bottom-stub {
       margin-top: 44px;
     }
@@ -198,11 +198,11 @@
 </head>
 <body>
   <div class="page">
-    <!-- BACKGROUND (blank paper with green band + logo) -->
+    <!-- BLANK BACKGROUND WITH BAND + LINES -->
     <img src="<%= backgroundUrl %>" class="page-bg" />
 
     <div class="page-content">
-      <!-- TOP HEADER -->
+      <!-- TOP HEADER (company + NWF info + dates) -->
       <div class="top-header">
         <div class="company-block-main">
           <div class="company-name-main">NSE MANAGEMENT INC</div>
@@ -211,7 +211,7 @@
         </div>
         <div class="nwf-block">
           <div class="nwf-title">NWF PAYROLL SERVICES</div>
-          <div class="nwf-subtitle">PAYROLL FOR SMALL BUSINESSES &amp; SELF-EMPLOYED</div>
+          <div class="nwf-subtitle">PAYROLL FOR SMALL BUSINESSES &amp; SELF- EMPLOYED</div>
           <div class="top-dates">
             <div>Check Date:&nbsp;&nbsp;<%= payDateFormatted %></div>
             <div>Pay Period Beginning:&nbsp;&nbsp;<%= payPeriodBeginFormatted || '' %></div>
@@ -228,7 +228,7 @@
             <div class="employee-id-block">
               <div class="emp-name"><%= employeeFullName %></div>
               <div class="emp-id">
-                Employee ID: <%= externalEmployeeId || '' %>
+                Employee ID:<%= maskedEmployeeId || '' %>
               </div>
             </div>
           </div>
@@ -307,7 +307,7 @@
                   <td>($<%= (ytdMedicare || 0).toFixed(2) %>)</td>
                 </tr>
                 <tr>
-                  <td>State Income Tax</td>
+                  <td>State of GA Income Tax</td>
                   <td>($<%= (stateIncomeTax || 0).toFixed(2) %>)</td>
                   <td>($<%= (ytdStateIncomeTax || 0).toFixed(2) %>)</td>
                 </tr>
@@ -323,7 +323,7 @@
         </div>
       </div>
 
-      <!-- BOTTOM STUB COPY (simpler, just tables + net pay) -->
+      <!-- BOTTOM STUB COPY (no header, just tables + net pay) -->
       <div class="bottom-stub">
         <div class="tables-row">
           <!-- Earnings copy -->
@@ -382,7 +382,7 @@
                   <td>($<%= (ytdMedicare || 0).toFixed(2) %>)</td>
                 </tr>
                 <tr>
-                  <td>State Income Tax</td>
+                  <td>State of GA Income Tax</td>
                   <td>($<%= (stateIncomeTax || 0).toFixed(2) %>)</td>
                   <td>($<%= (ytdStateIncomeTax || 0).toFixed(2) %>)</td>
                 </tr>
