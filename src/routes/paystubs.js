@@ -1,10 +1,18 @@
 // routes/paystubs.js
 const express = require('express');
 const mongoose = require('mongoose');
-const puppeteer = require('puppeteer');
+const PDFDocument = require('pdfkit'); // ⬅ use pdfkit instead of puppeteer
 
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
+
+let PayrollRun;
+try {
+  PayrollRun = require('../models/PayrollRun');
+} catch (e) {
+  PayrollRun = null;
+}
+
 
 let PayrollRun;
 try {
