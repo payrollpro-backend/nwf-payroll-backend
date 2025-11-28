@@ -1,11 +1,12 @@
 // routes/paystubs.js
 const express = require('express');
 const mongoose = require('mongoose');
-const PDFDocument = require('pdfkit'); // ⬅ use pdfkit instead of puppeteer
+const PDFDocument = require('pdfkit');
 
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
 
+// Load payrollRun model if available
 let PayrollRun;
 try {
   PayrollRun = require('../models/PayrollRun');
@@ -13,17 +14,11 @@ try {
   PayrollRun = null;
 }
 
-
-let PayrollRun;
-try {
-  PayrollRun = require('../models/PayrollRun');
-} catch (e) {
-  PayrollRun = null; // in case you don't have this model yet
-}
-
 const router = express.Router();
 
-/* ---------- helpers ---------- */
+/* ----------------------------------------
+   Helpers
+---------------------------------------- */
 
 function formatCurrency(value) {
   const num = typeof value === 'number' ? value : Number(value || 0);
@@ -56,7 +51,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   const periodBegin = payrollRun ? formatDate(payrollRun.periodStart) : '';
   const periodEnd = payrollRun ? formatDate(payrollRun.periodEnd) : '';
 
-  // For now, hard-code company info
+  // Company info
   const companyName = 'NSE MANAGEMENT INC';
   const companyAddressLine1 = '4711 Nutmeg Way SW';
   const companyAddressLine2 = 'Lilburn, GA 30047';
@@ -83,109 +78,49 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
 
   const netFormatted = formatCurrency(net);
 
-  return `<!doctype html>
+  return `
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
   <title>Paystub ${employeeFullName} - ${payDate}</title>
   <style>
-    * {
-      box-sizing: border-box;
-      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
-    }
-    body {
-      margin: 0;
-      padding: 24px;
-      font-size: 11px;
-      color: #000;
-    }
-    .page {
-      width: 100%;
-      max-width: 800px;
-      margin: 0 auto;
-    }
-        .logo {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .logo img {
-      height: 32px;
-    }
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif; }
+    body { margin: 0; padding: 24px; font-size: 11px; color: #000; }
+    .page { width: 100%; max-width: 800px; margin: 0 auto; }
 
-    .row {
-      display: flex;
-      flex-direction: row;
-      justify-content: space-between;
-    }
-    .section {
-      margin-bottom: 18px;
-    }
-    .brand {
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: 1px;
-    }
-    .sub-brand {
-      font-size: 10px;
-    }
-    .check-meta {
-      font-size: 11px;
-      text-align: right;
-    }
-    .check-meta table {
-      border-collapse: collapse;
-    }
-    .check-meta td {
-      padding: 2px 4px;
-    }
-    .line {
-      border-bottom: 1px solid #000;
-      margin: 8px 0;
-    }
-    .label {
-      font-weight: 600;
-    }
-    table {
-      border-collapse: collapse;
-      width: 100%;
-    }
-    th, td {
-      padding: 3px 4px;
-      border-bottom: 1px solid #ddd;
-    }
-    th {
-      font-weight: 600;
-      text-align: left;
-      border-bottom: 1px solid #000;
-    }
-    .right {
-      text-align: right;
-    }
-    .net-pay-line {
-      margin-top: 10px;
-      display: flex;
-      justify-content: flex-end;
-      font-size: 12px;
-    }
-    .net-pay-line span {
-      margin-left: 6px;
-    }
-    .stub-block {
-      margin-top: 18px;
-      padding-top: 8px;
-      border-top: 1px dashed #aaa;
-    }
-    .small {
-      font-size: 10px;
-    }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo img { height: 32px; }
+
+    .row { display: flex; justify-content: space-between; }
+    .section { margin-bottom: 18px; }
+    .brand { font-weight: 700; font-size: 16px; letter-spacing: 1px; }
+    .sub-brand { font-size: 10px; }
+
+    .check-meta { font-size: 11px; text-align:right; }
+    .check-meta table { border-collapse: collapse; }
+    .check-meta td { padding: 2px 4px; }
+
+    .line { border-bottom: 1px solid #000; margin: 8px 0; }
+    .label { font-weight: 600; }
+
+    table { border-collapse: collapse; width: 100%; }
+    th,td { padding: 3px 4px; border-bottom: 1px solid #ddd; }
+    th { font-weight: 600; text-align:left; border-bottom: 1px solid #000; }
+
+    .right { text-align:right; }
+    .net-pay-line { margin-top:10px; display:flex; justify-content:flex-end; font-size:12px; }
+    .net-pay-line span { margin-left:6px; }
+
+    .stub-block { margin-top:18px; padding-top:8px; border-top:1px dashed #aaa; }
+    .small { font-size:10px; }
   </style>
 </head>
 <body>
   <div class="page">
 
-    <!-- Top check header -->
-       <div class="section row">
+    <!-- Header -->
+    <div class="section row">
       <div class="logo">
         <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_logo_for_paystubs.png?v=1764193030" />
         <div>
@@ -194,43 +129,32 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
         </div>
       </div>
       <div class="check-meta">
-
         <table>
-          <tr>
-            <td class="label">Check Date</td>
-            <td>${payDate}</td>
-          </tr>
-          <tr>
-            <td class="label">Amount</td>
-            <td>${netFormatted}</td>
-          </tr>
+          <tr><td class="label">Check Date</td><td>${payDate}</td></tr>
+          <tr><td class="label">Amount</td><td>${netFormatted}</td></tr>
         </table>
       </div>
     </div>
 
-    <!-- Payee lines -->
+    <!-- Payee section -->
     <div class="section">
       <div><span class="label">Pay</span> ________________________________ Dollars</div>
-      <div style="margin-top: 6px;">
-        <span class="label">To The</span> ${employeeFullName || '&nbsp;'}
-      </div>
-      <div>
-        <span class="label">Order Of:</span> ${employeeFullName || '&nbsp;'}
-      </div>
-      <div>${email || '&nbsp;'}</div>
+      <div style="margin-top:6px;"><span class="label">To The</span> ${employeeFullName}</div>
+      <div><span class="label">Order Of:</span> ${employeeFullName}</div>
+      <div>${email}</div>
     </div>
 
     <div class="line"></div>
 
-    <!-- FIRST STUB -->
+    <!-- Stub section -->
     <div class="section">
       <div class="label">${companyName}</div>
       <div>${employeeFullName}</div>
       <div>Employee ID: ${externalEmployeeId}</div>
 
-      <div class="row" style="margin-top: 8px;">
+      <div class="row" style="margin-top:8px;">
         <!-- Earnings -->
-        <div style="width: 55%; padding-right: 8px;">
+        <div style="width:55%; padding-right:8px;">
           <table>
             <thead>
               <tr>
@@ -254,7 +178,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
         </div>
 
         <!-- Deductions -->
-        <div style="width: 45%; padding-left: 8px;">
+        <div style="width:45%; padding-left:8px;">
           <table>
             <thead>
               <tr>
@@ -264,145 +188,34 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>Gross</td>
-                <td class="right">${formatCurrency(gross)}</td>
-                <td class="right">${formatCurrency(ytdGross)}</td>
-              </tr>
-              <tr>
-                <td>Federal Income Tax</td>
-                <td class="right">(${formatCurrency(fed)})</td>
-                <td class="right">(${formatCurrency(ytdFed)})</td>
-              </tr>
-              <tr>
-                <td>Social Security (Employee)</td>
-                <td class="right">(${formatCurrency(ss)})</td>
-                <td class="right">(${formatCurrency(ytdSs)})</td>
-              </tr>
-              <tr>
-                <td>Medicare (Employee)</td>
-                <td class="right">(${formatCurrency(med)})</td>
-                <td class="right">(${formatCurrency(ytdMed)})</td>
-              </tr>
-              <tr>
-                <td>State Income Tax</td>
-                <td class="right">(${formatCurrency(state)})</td>
-                <td class="right">(${formatCurrency(ytdState)})</td>
-              </tr>
-              <tr>
-                <td><strong>Total Taxes</strong></td>
-                <td class="right"><strong>(${formatCurrency(totalTaxes)})</strong></td>
-                <td class="right"><strong>(${formatCurrency(ytdTotalTaxes)})</strong></td>
-              </tr>
+              <tr><td>Gross</td><td class="right">${formatCurrency(gross)}</td><td class="right">${formatCurrency(ytdGross)}</td></tr>
+              <tr><td>Federal Income Tax</td><td class="right">(${formatCurrency(fed)})</td><td class="right">(${formatCurrency(ytdFed)})</td></tr>
+              <tr><td>Social Security</td><td class="right">(${formatCurrency(ss)})</td><td class="right">(${formatCurrency(ytdSs)})</td></tr>
+              <tr><td>Medicare</td><td class="right">(${formatCurrency(med)})</td><td class="right">(${formatCurrency(ytdMed)})</td></tr>
+              <tr><td>State Tax</td><td class="right">(${formatCurrency(state)})</td><td class="right">(${formatCurrency(ytdState)})</td></tr>
+              <tr><td><strong>Total Taxes</strong></td><td class="right"><strong>(${formatCurrency(totalTaxes)})</strong></td><td class="right"><strong>(${formatCurrency(ytdTotalTaxes)})</strong></td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="net-pay-line">
-        <span class="label">Net Pay:</span>
-        <span>${netFormatted}</span>
-      </div>
+      <div class="net-pay-line"><span class="label">Net Pay:</span><span>${netFormatted}</span></div>
 
-      <div class="small" style="margin-top: 6px;">
+      <div class="small" style="margin-top:6px;">
         Check Date: ${payDate}
         ${periodBegin && periodEnd ? `&nbsp;&nbsp; Pay Period: ${periodBegin} - ${periodEnd}` : ''}
       </div>
     </div>
 
-    <!-- SECOND STUB COPY -->
-    <div class="stub-block">
-      <div class="label">${companyName}</div>
-      <div>${employeeFullName}</div>
-      <div>Employee ID: ${externalEmployeeId}</div>
-
-      <div class="row" style="margin-top: 8px;">
-        <div style="width: 55%; padding-right: 8px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Earnings</th>
-                <th class="right">Hours</th>
-                <th class="right">Rate</th>
-                <th class="right">Current</th>
-                <th class="right">YTD</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Regular</td>
-                <td class="right">${hours ? hours.toFixed(2) : ''}</td>
-                <td class="right">${rate ? rate.toFixed(2) : ''}</td>
-                <td class="right">${formatCurrency(gross)}</td>
-                <td class="right">${formatCurrency(ytdGross)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div style="width: 45%; padding-left: 8px;">
-          <table>
-            <thead>
-              <tr>
-                <th>Deductions From Gross:</th>
-                <th class="right">Current</th>
-                <th class="right">YTD</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Gross</td>
-                <td class="right">${formatCurrency(gross)}</td>
-                <td class="right">${formatCurrency(ytdGross)}</td>
-              </tr>
-              <tr>
-                <td>Federal Income Tax</td>
-                <td class="right">(${formatCurrency(fed)})</td>
-                <td class="right">(${formatCurrency(ytdFed)})</td>
-              </tr>
-              <tr>
-                <td>Social Security (Employee)</td>
-                <td class="right">(${formatCurrency(ss)})</td>
-                <td class="right">(${formatCurrency(ytdSs)})</td>
-              </tr>
-              <tr>
-                <td>Medicare (Employee)</td>
-                <td class="right">(${formatCurrency(med)})</td>
-                <td class="right">(${formatCurrency(ytdMed)})</td>
-              </tr>
-              <tr>
-                <td>State Income Tax</td>
-                <td class="right">(${formatCurrency(state)})</td>
-                <td class="right">(${formatCurrency(ytdState)})</td>
-              </tr>
-              <tr>
-                <td><strong>Total Taxes</strong></td>
-                <td class="right"><strong>(${formatCurrency(totalTaxes)})</strong></td>
-                <td class="right"><strong>(${formatCurrency(ytdTotalTaxes)})</strong></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="net-pay-line">
-        <span class="label">Net Pay:</span>
-        <span>${netFormatted}</span>
-      </div>
-
-      <div class="section" style="margin-top: 12px;">
-        <div class="label">${companyName}</div>
-        <div>${companyAddressLine1}</div>
-        <div>${companyAddressLine2}</div>
-      </div>
-    </div>
-
   </div>
 </body>
-</html>`;
+</html>
+`;
 }
 
-/* ---------- ROUTES ---------- */
+/* ----------------------------------------
+   ROUTES
+---------------------------------------- */
 
 // Admin: list all paystubs
 router.get('/', async (req, res) => {
@@ -413,57 +226,42 @@ router.get('/', async (req, res) => {
 
     res.json(paystubs);
   } catch (err) {
-    console.error('Error fetching paystubs:', err);
     res.status(500).json({ message: 'Server error fetching paystubs' });
   }
 });
 
-// Employee: list paystubs by employee (Mongo _id OR externalEmployeeId)
+// Employee: list paystubs by employee
 router.get('/employee/:employeeId', async (req, res) => {
   try {
     const { employeeId } = req.params;
-
-    const query = {};
-    if (mongoose.Types.ObjectId.isValid(employeeId)) {
-      query._id = employeeId;
-    } else {
-      query.externalEmployeeId = employeeId;
-    }
+    const query = mongoose.Types.ObjectId.isValid(employeeId)
+      ? { _id: employeeId }
+      : { externalEmployeeId: employeeId };
 
     const employee = await Employee.findOne(query);
     if (!employee) {
       return res.status(404).json({ message: 'Employee not found' });
     }
 
-    const stubs = await Paystub.find({ employee: employee._id }).sort({
-      payDate: -1,
-    });
-
+    const stubs = await Paystub.find({ employee: employee._id }).sort({ payDate: -1 });
     res.json(stubs);
   } catch (err) {
-    console.error('Error fetching paystubs by employee:', err);
-    res.status(500).json({
-      message: 'Server error fetching employee paystubs',
-    });
+    res.status(500).json({ message: 'Server error fetching employee paystubs' });
   }
 });
 
-// HTML preview for a single stub
+// HTML preview
 router.get('/:id/html', async (req, res) => {
   try {
-    const stub = await Paystub.findById(req.params.id).populate(
-      'employee',
-      'firstName lastName email externalEmployeeId'
-    );
+    const stub = await Paystub.findById(req.params.id)
+      .populate('employee', 'firstName lastName email externalEmployeeId');
 
-    if (!stub) {
-      return res.status(404).send('Paystub not found');
-    }
+    if (!stub) return res.status(404).send('Paystub not found');
 
-    let payrollRunDoc = null;
-    if (PayrollRun && stub.payrollRun) {
-      payrollRunDoc = await PayrollRun.findById(stub.payrollRun);
-    }
+    const payrollRunDoc =
+      PayrollRun && stub.payrollRun
+        ? await PayrollRun.findById(stub.payrollRun)
+        : null;
 
     const html = buildPaystubHtml({
       stub,
@@ -474,27 +272,22 @@ router.get('/:id/html', async (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {
-    console.error('Error building paystub HTML:', err);
     res.status(500).send('Error building paystub HTML');
   }
 });
 
-// PDF download for a single stub using pdfkit (no puppeteer)
+// PDF generation (pdfkit)
 router.get('/:id/pdf', async (req, res) => {
   try {
-    const stub = await Paystub.findById(req.params.id).populate(
-      'employee',
-      'firstName lastName email externalEmployeeId'
-    );
+    const stub = await Paystub.findById(req.params.id)
+      .populate('employee', 'firstName lastName email externalEmployeeId');
 
-    if (!stub) {
-      return res.status(404).send('Paystub not found');
-    }
+    if (!stub) return res.status(404).send('Paystub not found');
 
-    let payrollRunDoc = null;
-    if (PayrollRun && stub.payrollRun) {
-      payrollRunDoc = await PayrollRun.findById(stub.payrollRun);
-    }
+    const payrollRunDoc =
+      PayrollRun && stub.payrollRun
+        ? await PayrollRun.findById(stub.payrollRun)
+        : null;
 
     const employee = stub.employee || {};
     const firstName = employee.firstName || '';
@@ -524,9 +317,7 @@ router.get('/:id/pdf', async (req, res) => {
     const ytdTotalTaxes =
       stub.ytdTotalTaxes || ytdFed + ytdState + ytdSs + ytdMed;
 
-    const fileName =
-      stub.fileName ||
-      `nwf_${externalEmployeeId || 'employee'}_${payDate || 'date'}.pdf`;
+    const fileName = stub.fileName || `nwf_${externalEmployeeId}_${payDate}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -534,36 +325,15 @@ router.get('/:id/pdf', async (req, res) => {
       `attachment; filename="${fileName}"`
     );
 
-    const doc = new PDFDocument({
-      size: 'LETTER',
-      margin: 36,
-    });
-
-    // Pipe PDF to response
+    const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
     doc.pipe(res);
 
-    // ---- HEADER / LOGO ----
-    const logoUrl =
-      'https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_PAYROLL_SERVICES.png?v=1764211664';
-
-    // pdfkit can't fetch remote images out of the box on Render,
-    // so we’ll start with text header. If you want the actual bitmap,
-    // we’d download it to the server and load from local path.
-    doc
-      .fontSize(16)
-      .text('NWF PAYROLL SERVICES', { align: 'left' })
-      .moveDown(0.2);
+    // Header
+    doc.fontSize(16).text('NWF PAYROLL SERVICES', { align: 'left' });
     doc.fontSize(10).text('PAYROLL SERVICES', { align: 'left' });
+    doc.moveDown(1.5);
 
-    // Check info (top-right)
-    doc
-      .fontSize(10)
-      .text(`Check Date: ${payDate}`, 350, 50, { align: 'left' })
-      .text(`Amount: $${net.toFixed(2)}`, 350, 65, { align: 'left' });
-
-    doc.moveDown(2);
-
-    // ---- PAYEE LINES ----
+    // Payee
     doc
       .fontSize(10)
       .text('Pay ________________________________ Dollars')
@@ -575,132 +345,79 @@ router.get('/:id/pdf', async (req, res) => {
       .text(email);
 
     doc.moveDown(0.5);
-    doc.moveTo(36, doc.y).lineTo(576, doc.y).stroke(); // horizontal line
+    doc.moveTo(36, doc.y).lineTo(576, doc.y).stroke();
     doc.moveDown(0.5);
 
-    // ---- COMPANY & EMPLOYEE ----
+    // Company & Employee
     const companyName = 'NSE MANAGEMENT INC';
     const companyAddressLine1 = '4711 Nutmeg Way SW';
     const companyAddressLine2 = 'Lilburn, GA 30047';
 
     doc
       .fontSize(11)
-      .text(companyName, { continued: false })
+      .text(companyName)
       .fontSize(10)
       .text(employeeFullName)
       .text(`Employee ID: ${externalEmployeeId}`);
 
-    doc.moveDown(0.5);
+    doc.moveDown(1);
 
-    // ---- EARNINGS + DEDUCTIONS TABLES (side by side) ----
+    // Earnings & Deductions
     const startY = doc.y + 5;
 
-    // Earnings table
-    const leftX = 36;
-    const midX = 320;
-    const rightX = 340;
+    doc.fontSize(9).text('Earnings', 36, startY);
+    doc.text('Current', 300, startY);
+    doc.text('YTD', 380, startY);
 
-    doc.fontSize(9);
-    doc.text('Earnings', leftX, startY);
-    doc.text('Hours', 200, startY, { width: 50, align: 'right' });
-    doc.text('Rate', 250, startY, { width: 50, align: 'right' });
-    doc.text('Current', 300, startY, { width: 60, align: 'right' });
-    doc.text('YTD', 360, startY, { width: 60, align: 'right' });
+    let y = startY + 15;
 
-    let rowY = startY + 12;
+    doc.text('Regular', 36, y);
+    doc.text(gross.toFixed(2), 300, y);
+    doc.text(ytdGross.toFixed(2), 380, y);
 
-    // Regular row
-    doc.text('Regular', leftX, rowY);
-    doc.text(
-      stub.hoursWorked ? stub.hoursWorked.toFixed(2) : '',
-      200,
-      rowY,
-      { width: 50, align: 'right' }
-    );
-    doc.text(
-      stub.hourlyRate ? stub.hourlyRate.toFixed(2) : '',
-      250,
-      rowY,
-      { width: 50, align: 'right' }
-    );
-    doc.text(gross.toFixed(2), 300, rowY, { width: 60, align: 'right' });
-    doc.text(ytdGross.toFixed(2), 360, rowY, { width: 60, align: 'right' });
+    y += 20;
 
-    // Deductions table (below or to the right)
-    rowY += 24;
-    doc.moveDown(1.5);
-    const dedY = rowY + 10;
+    doc.text('Deductions:', 36, y);
+    y += 12;
 
-    doc.fontSize(9);
-    doc.text('Deductions From Gross:', leftX, dedY);
-    doc.text('Current', 300, dedY, { width: 60, align: 'right' });
-    doc.text('YTD', 360, dedY, { width: 60, align: 'right' });
+    const drawDeduction = (label, cur, ytd) => {
+      doc.text(label, 36, y);
+      doc.text(`(${cur.toFixed(2)})`, 300, y);
+      doc.text(`(${ytd.toFixed(2)})`, 380, y);
+      y += 12;
+    };
 
-    let dedRowY = dedY + 12;
+    drawDeduction('Federal Income Tax', fed, ytdFed);
+    drawDeduction('State Tax', state, ytdState);
+    drawDeduction('Social Security', ss, ytdSs);
+    drawDeduction('Medicare', med, ytdMed);
 
-    function dedRow(label, cur, ytd) {
-      doc.text(label, leftX, dedRowY);
-      doc.text(cur.toFixed(2), 300, dedRowY, { width: 60, align: 'right' });
-      doc.text(ytd.toFixed(2), 360, dedRowY, {
-        width: 60,
-        align: 'right',
-      });
-      dedRowY += 12;
-    }
+    // Net pay
+    y += 20;
+    doc.fontSize(12).text(`Net Pay: $${net.toFixed(2)}`, 36, y);
 
-    dedRow('Gross', gross, ytdGross);
-    dedRow('Federal Income Tax', -fed, -ytdFed);
-    dedRow('Social Security (Employee)', -ss, -ytdSs);
-    dedRow('Medicare (Employee)', -med, -ytdMed);
-    dedRow('State Income Tax', -state, -ytdState);
-    dedRow('Total Taxes', -totalTaxes, -ytdTotalTaxes);
-
-    // ---- NET PAY ----
-    doc.moveDown(2);
-    doc
-      .fontSize(11)
-      .text(`Net Pay: $${net.toFixed(2)}`, { align: 'right' });
-
-    if (payrollRunDoc && payrollRunDoc.periodStart && payrollRunDoc.periodEnd) {
-      const pb = new Date(payrollRunDoc.periodStart)
-        .toISOString()
-        .slice(0, 10);
-      const pe = new Date(payrollRunDoc.periodEnd)
-        .toISOString()
-        .slice(0, 10);
-      doc
-        .fontSize(9)
-        .text(`Pay Period: ${pb} - ${pe}`, { align: 'left' });
-    }
-
-    doc.moveDown(2);
-    doc.fontSize(9).text(companyName);
+    // Footer
+    y += 30;
+    doc.fontSize(9).text(companyName, 36, y);
     doc.text(companyAddressLine1);
     doc.text(companyAddressLine2);
 
-    // Finish PDF
     doc.end();
   } catch (err) {
-    console.error('Error generating paystub PDF (pdfkit):', err);
     res.status(500).send('Error generating paystub PDF');
   }
 });
 
-// Single paystub JSON
+// Get single stub JSON
 router.get('/:id', async (req, res) => {
   try {
     const stub = await Paystub.findById(req.params.id).populate(
       'employee',
       'firstName lastName email externalEmployeeId'
     );
-
-    if (!stub) {
-      return res.status(404).json({ message: 'Paystub not found' });
-    }
-
+    if (!stub) return res.status(404).json({ message: 'Paystub not found' });
     res.json(stub);
   } catch (err) {
-    console.error('Error fetching paystub by id:', err);
     res.status(500).json({ message: 'Server error fetching paystub' });
   }
 });
