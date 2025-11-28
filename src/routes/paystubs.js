@@ -122,7 +122,7 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
     <!-- Header -->
     <div class="section row">
       <div class="logo">
-        <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_logo_for_paystubs.png?v=1764193030" />
+        <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_BRANDED_LOGO.png?v=1764317298" />
         <div>
           <div class="brand">NWF PAYROLL SERVICES</div>
           <div class="sub-brand">PAYROLL SERVICES</div>
@@ -276,13 +276,15 @@ router.get('/:id/html', async (req, res) => {
   }
 });
 
-// PDF generation (pdfkit)
+// PDF generation (pdfkit) – ADP-style check + earnings stub
 router.get('/:id/pdf', async (req, res) => {
   try {
     const stub = await Paystub.findById(req.params.id)
       .populate('employee', 'firstName lastName email externalEmployeeId');
 
-    if (!stub) return res.status(404).send('Paystub not found');
+    if (!stub) {
+      return res.status(404).send('Paystub not found');
+    }
 
     const payrollRunDoc =
       PayrollRun && stub.payrollRun
@@ -296,7 +298,13 @@ router.get('/:id/pdf', async (req, res) => {
     const externalEmployeeId = employee.externalEmployeeId || '';
     const employeeFullName = `${firstName} ${lastName}`.trim();
 
-    const payDate = stub.payDate
+    // Company block
+    const companyName = 'NSE MANAGEMENT INC';
+    const companyAddressLine1 = '4711 Nutmeg Way SW';
+    const companyAddressLine2 = 'Lilburn, GA 30047';
+
+    // Pay + tax data
+    const payDateStr = stub.payDate
       ? new Date(stub.payDate).toISOString().slice(0, 10)
       : '';
 
@@ -317,7 +325,13 @@ router.get('/:id/pdf', async (req, res) => {
     const ytdTotalTaxes =
       stub.ytdTotalTaxes || ytdFed + ytdState + ytdSs + ytdMed;
 
-    const fileName = stub.fileName || `nwf_${externalEmployeeId}_${payDate}.pdf`;
+    const hours = stub.hoursWorked || 0;
+    const rate = stub.hourlyRate || 0;
+
+    const fileName =
+      stub.fileName || `nwf_${externalEmployeeId || 'employee'}_${payDateStr}.pdf`;
+
+    const formatNum = (n) => Number(n || 0).toFixed(2);
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
@@ -328,85 +342,168 @@ router.get('/:id/pdf', async (req, res) => {
     const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
     doc.pipe(res);
 
-    // Header
-    doc.fontSize(16).text('NWF PAYROLL SERVICES', { align: 'left' });
-    doc.fontSize(10).text('PAYROLL SERVICES', { align: 'left' });
-    doc.moveDown(1.5);
+    // =======================
+    // TOP CHECK AREA (ADP-like)
+    // =======================
 
-    // Payee
-    doc
-      .fontSize(10)
-      .text('Pay ________________________________ Dollars')
-      .moveDown(0.3)
-      .text(`To The ${employeeFullName}`)
-      .moveDown(0.2)
-      .text(`Order Of: ${employeeFullName}`)
-      .moveDown(0.2)
-      .text(email);
+    let y = 36;
 
-    doc.moveDown(0.5);
-    doc.moveTo(36, doc.y).lineTo(576, doc.y).stroke();
-    doc.moveDown(0.5);
+    // "Logo" / Brand block – if you later add an image file to the repo,
+    // you can replace this with doc.image('path/to/logo.png', 36, y, { width: 120 })
+    doc.fontSize(16).text('NWF PAYROLL SERVICES', 36, y);
+    y += 16;
+    doc.fontSize(9).text('PAYROLL SERVICES', 36, y);
 
-    // Company & Employee
-    const companyName = 'NSE MANAGEMENT INC';
-    const companyAddressLine1 = '4711 Nutmeg Way SW';
-    const companyAddressLine2 = 'Lilburn, GA 30047';
+    // Check info box (right)
+    doc.fontSize(9);
+    doc.text('Check Date:', 400, 40);
+    doc.text(payDateStr, 480, 40);
+    doc.text('Amount:', 400, 55);
+    doc.text(`$${formatNum(net)}`, 480, 55);
 
-    doc
-      .fontSize(11)
-      .text(companyName)
-      .fontSize(10)
-      .text(employeeFullName)
-      .text(`Employee ID: ${externalEmployeeId}`);
+    // Payee lines
+    y = 82;
+    doc.fontSize(10).text('Pay to the Order of', 36, y);
+    doc.moveTo(140, y + 10).lineTo(380, y + 10).stroke();
+    doc.text(employeeFullName, 145, y);
 
-    doc.moveDown(1);
+    // Written-out amount placeholder line
+    y += 24;
+    doc.text('Amount in Words', 36, y);
+    doc.moveTo(120, y + 10).lineTo(560, y + 10).stroke();
 
-    // Earnings & Deductions
-    const startY = doc.y + 5;
+    // Memo and signature
+    y += 28;
+    doc.text('Memo', 36, y);
+    doc.moveTo(70, y + 10).lineTo(320, y + 10).stroke();
 
-    doc.fontSize(9).text('Earnings', 36, startY);
-    doc.text('Current', 300, startY);
-    doc.text('YTD', 380, startY);
+    doc.text('AUTHORIZED SIGNATURE', 360, y + 12, { align: 'right' });
+    doc.moveTo(320, y + 10).lineTo(560, y + 10).stroke();
 
-    let y = startY + 15;
+    // Little MICR-style line (visual only)
+    y += 40;
+    doc.fontSize(9).text('"OO 1080"', 260, y, { align: 'center' });
 
-    doc.text('Regular', 36, y);
-    doc.text(gross.toFixed(2), 300, y);
-    doc.text(ytdGross.toFixed(2), 380, y);
-
+    // Tear line
     y += 20;
+    doc.moveTo(36, y).lineTo(576, y).dash(2, { space: 2 }).stroke().undash();
 
-    doc.text('Deductions:', 36, y);
+    // =======================
+    // BOTTOM EARNINGS STUB
+    // =======================
+
+    y += 16;
+
+    // Employer + employee info
+    doc.fontSize(10).text(companyName, 36, y);
     y += 12;
+    doc.text(companyAddressLine1, 36, y);
+    y += 12;
+    doc.text(companyAddressLine2, 36, y);
 
-    const drawDeduction = (label, cur, ytd) => {
+    // Employee block on right
+    const empBlockTop = y - 24;
+    doc.text(employeeFullName, 360, empBlockTop);
+    doc.text(`Employee ID: ${externalEmployeeId}`, 360, empBlockTop + 12);
+    doc.text(email, 360, empBlockTop + 24);
+
+    // Pay period info under employee block if we have payrollRun
+    let rY = empBlockTop + 42;
+    if (payrollRunDoc && payrollRunDoc.periodStart && payrollRunDoc.periodEnd) {
+      const pb = new Date(payrollRunDoc.periodStart)
+        .toISOString()
+        .slice(0, 10);
+      const pe = new Date(payrollRunDoc.periodEnd)
+        .toISOString()
+        .slice(0, 10);
+      doc.fontSize(9).text('Pay Period:', 360, rY);
+      doc.text(`${pb} - ${pe}`, 430, rY);
+    }
+
+    // Move cursor down a bit
+    y += 40;
+
+    // === Earnings table header ===
+    const earnHeaderY = y;
+    doc.fontSize(9).text('EARNINGS', 36, earnHeaderY);
+    doc.text('Rate', 210, earnHeaderY, { width: 60, align: 'right' });
+    doc.text('Hours', 270, earnHeaderY, { width: 60, align: 'right' });
+    doc.text('This Period', 330, earnHeaderY, { width: 80, align: 'right' });
+    doc.text('YTD', 410, earnHeaderY, { width: 80, align: 'right' });
+
+    y = earnHeaderY + 14;
+
+    // Regular Pay row
+    doc.text('Regular Pay', 36, y);
+    doc.text(formatNum(rate), 210, y, { width: 60, align: 'right' });
+    doc.text(hours ? hours.toFixed(2) : '', 270, y, {
+      width: 60,
+      align: 'right',
+    });
+    doc.text(formatNum(gross), 330, y, { width: 80, align: 'right' });
+    doc.text(formatNum(ytdGross), 410, y, { width: 80, align: 'right' });
+
+    // Total earnings row (if you ever add overtime/bonus, you can sum here)
+    y += 16;
+    doc.fontSize(9).text('Total Earnings', 36, y);
+    doc.text(formatNum(gross), 330, y, { width: 80, align: 'right' });
+    doc.text(formatNum(ytdGross), 410, y, { width: 80, align: 'right' });
+
+    // === Deductions header ===
+    y += 24;
+    const dedHeaderY = y;
+    doc.fontSize(9).text('DEDUCTIONS', 36, dedHeaderY);
+    doc.text('Current', 330, dedHeaderY, { width: 80, align: 'right' });
+    doc.text('YTD', 410, dedHeaderY, { width: 80, align: 'right' });
+
+    y = dedHeaderY + 14;
+
+    const drawDed = (label, cur, ytd) => {
       doc.text(label, 36, y);
-      doc.text(`(${cur.toFixed(2)})`, 300, y);
-      doc.text(`(${ytd.toFixed(2)})`, 380, y);
+      doc.text(`(${formatNum(cur)})`, 330, y, { width: 80, align: 'right' });
+      doc.text(`(${formatNum(ytd)})`, 410, y, { width: 80, align: 'right' });
       y += 12;
     };
 
-    drawDeduction('Federal Income Tax', fed, ytdFed);
-    drawDeduction('State Tax', state, ytdState);
-    drawDeduction('Social Security', ss, ytdSs);
-    drawDeduction('Medicare', med, ytdMed);
+    drawDed('Federal Income Tax', fed, ytdFed);
+    drawDed('Social Security (Employee)', ss, ytdSs);
+    drawDed('Medicare (Employee)', med, ytdMed);
+    drawDed('State Income Tax', state, ytdState);
 
-    // Net pay
-    y += 20;
-    doc.fontSize(12).text(`Net Pay: $${net.toFixed(2)}`, 36, y);
+    // Total taxes row
+    y += 4;
+    doc.fontSize(9).text('Total Taxes', 36, y);
+    doc.text(`(${formatNum(totalTaxes)})`, 330, y, {
+      width: 80,
+      align: 'right',
+    });
+    doc.text(`(${formatNum(ytdTotalTaxes)})`, 410, y, {
+      width: 80,
+      align: 'right',
+    });
 
-    // Footer
-    y += 30;
-    doc.fontSize(9).text(companyName, 36, y);
-    doc.text(companyAddressLine1);
-    doc.text(companyAddressLine2);
+    // === Net Pay summary ===
+    y += 24;
+    doc.fontSize(10).text('Net Pay This Period:', 36, y);
+    doc.text(`$${formatNum(net)}`, 170, y, { width: 80, align: 'right' });
+
+    y += 16;
+    doc.fontSize(9).text('YTD Net Pay:', 36, y);
+    doc.text(`$${formatNum(ytdNet)}`, 170, y, { width: 80, align: 'right' });
+
+    // Footer company block
+    y += 32;
+    doc.fontSize(8).text(companyName, 36, y);
+    doc.text(companyAddressLine1, 36, y + 10);
+    doc.text(companyAddressLine2, 36, y + 20);
 
     doc.end();
   } catch (err) {
+    console.error('Error generating paystub PDF (ADP-style):', err);
     res.status(500).send('Error generating paystub PDF');
   }
 });
+
 
 // Get single stub JSON
 router.get('/:id', async (req, res) => {
