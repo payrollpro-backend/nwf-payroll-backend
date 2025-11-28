@@ -4,7 +4,7 @@ const mongoose = require('mongoose');
 const PDFDocument = require('pdfkit');
 const { generateAdpPaystubPdf } = require('../services/paystubPdf');
 
-
+f
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
 
@@ -245,15 +245,22 @@ router.get('/paystubs/:id/pdf', async (req, res) => {
 
     const pdfBuffer = await generateAdpPaystubPdf(paystub);
 
-    const fileDate =
+    const payDate =
       paystub.payDate instanceof Date
-        ? paystub.payDate.toISOString().slice(0, 10)
-        : 'paystub';
+        ? paystub.payDate.toISOString().slice(0, 10) // YYYY-MM-DD
+        : 'paydate';
+
+    const employeeIdSafe = (
+      paystub.employee.externalEmployeeId ||
+      paystub.employee._id.toString()
+    ).replace(/[^a-zA-Z0-9_-]/g, '');
+
+    const fileName = `nwf_${employeeIdSafe}_${payDate}.pdf`;
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="paystub_${fileDate}.pdf"`
+      `inline; filename="${fileName}"`
     );
 
     return res.send(pdfBuffer);
@@ -262,6 +269,7 @@ router.get('/paystubs/:id/pdf', async (req, res) => {
     return res.status(500).json({ message: 'Error generating paystub PDF' });
   }
 });
+
 
 // Employee: list paystubs by employee
 router.get('/employee/:employeeId', async (req, res) => {
