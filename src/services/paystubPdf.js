@@ -19,8 +19,7 @@ async function generateAdpPaystubPdf(paystub) {
     ? payDate.toLocaleDateString('en-US')
     : '';
 
-  // If your model later has payPeriodStart/payPeriodEnd, we can show them.
-  // For now we’ll just fall back to "—" so the template doesn't break.
+  // If you add payPeriodStart/payPeriodEnd later, we can show them.
   let payPeriodLabel = '—';
   if (paystub.payPeriodStart && paystub.payPeriodEnd) {
     const start = new Date(paystub.payPeriodStart);
@@ -62,11 +61,13 @@ async function generateAdpPaystubPdf(paystub) {
     ytdMedicare: Number(paystub.ytdMedicare || 0),
     ytdTotalTaxes: Number(paystub.ytdTotalTaxes || 0),
 
-    // if you later store real rate/hours, plug them here
+    // you can wire real rate/hours later
     regularRateFormatted: '0.00',
     regularHoursFormatted: '0.00',
-    backgroundUrl: 'https://cdn.shopify.com/s/files/1/0970/4882/2041/files/PAYSTUB_BACKGROUND.png?v=1764362858',
-    };
+
+    // background for the stub
+    backgroundUrl: 'https://www.nwfpayroll.com/nwf-paystub-bg.png'
+  };
 
   // Render HTML from EJS template file
   const html = await ejs.renderFile(templatePath, templateData);
