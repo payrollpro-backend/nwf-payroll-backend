@@ -19,31 +19,32 @@
     .page {
       position: relative;
       width: 100%;
-      min-height: 3300px; /* tall enough for a full letter page */
+      min-height: 1056px; /* ~11in at 96dpi; enough for a full page */
       overflow: hidden;
     }
 
+    /* Background image (your paystub paper) */
     .page-bg {
       position: absolute;
-      top: 0;
-      left: 0;
+      inset: 0;          /* top:0 right:0 bottom:0 left:0 */
       width: 100%;
       height: 100%;
       object-fit: cover;
       z-index: 0;
     }
 
+    /* Actual stub content on top of background */
     .page-content {
       position: relative;
       z-index: 1;
-      padding: 70px 70px 40px 70px; /* top padding so content sits nicely under the logo band */
+      padding: 70px 70px 40px 70px; /* adjust if you want content higher/lower */
     }
 
     .card {
       border: 1px solid #d0d0d0;
       background-color: rgba(255, 255, 255, 0.96);
       padding: 14px 14px 10px;
-      margin-bottom: 14px;
+      border-radius: 6px;
     }
 
     .header-row {
@@ -97,16 +98,6 @@
     .netpay-big {
       font-size: 15px;
       font-weight: 700;
-      margin-top: 4px;
-    }
-
-    .check-line {
-      margin: 10px 0 4px;
-      border-top: 1px dashed #aaa;
-    }
-
-    .payee-line {
-      font-size: 10px;
       margin-top: 4px;
     }
 
@@ -216,13 +207,13 @@
 </head>
 <body>
   <div class="page">
-    <!-- Background image from www.nwfpayroll.com -->
+    <!-- BACKGROUND IMAGE -->
     <img src="<%= backgroundUrl %>" class="page-bg" />
 
+    <!-- FOREGROUND CONTENT -->
     <div class="page-content">
-      <!-- MAIN PAYSTUB CARD -->
       <div class="card">
-        <!-- Header / Check Summary -->
+        <!-- Header / Summary -->
         <div class="header-row">
           <div class="company-block">
             <div class="company-name">NSE MANAGEMENT INC</div>
@@ -242,20 +233,13 @@
               <span class="value"><%= checkNumber %></span>
             </div>
             <div class="netpay-big">
-              NET PAY: $<%= (netPay || 0).toFixed(2) %>
+              Net Pay: $<%= (netPay || 0).toFixed(2) %>
             </div>
           </div>
         </div>
 
-        <!-- Payee line (check-style) -->
-        <div class="check-line"></div>
-        <div class="payee-line">
-          Pay to the order of <strong><%= employeeFullName %></strong>
-          &nbsp;&nbsp; $<%= (netPay || 0).toFixed(2) %>
-        </div>
-
         <!-- Employee / Pay Info -->
-        <div class="section" style="margin-top: 8px;">
+        <div class="section">
           <div class="section-header">Employee &amp; Pay Information</div>
           <div class="section-body">
             <div class="info-grid">
@@ -390,10 +374,8 @@
           This statement has been prepared by NWF Payroll Services. Verify this paystub at
           https://nwf-payroll-backend.onrender.com/api/verify-paystub/<%= verificationCode %>
         </div>
-      </div><!-- /.card -->
-    </div><!-- /.page-content -->
-  </div><!-- /.page -->
+      </div>
+    </div>
+  </div>
 </body>
 </html>
-
-
