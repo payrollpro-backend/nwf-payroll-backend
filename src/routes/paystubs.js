@@ -2,6 +2,8 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const PDFDocument = require('pdfkit');
+const { generateAdpPaystubPdf } = require('../services/paystubPdf');
+
 
 const Paystub = require('../models/Paystub');
 const Employee = require('../models/Employee');
@@ -229,6 +231,35 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('Error fetching paystubs:', err);
     res.status(500).json({ message: 'Server error fetching paystubs' });
+  }
+});
+router.get('/paystubs/:id/pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const paystub = await Paystub.findById(id).populate('employee');
+
+    if (!paystub) {
+      return res.status(404).json({ message: 'Paystub not found' });
+    }
+
+    const pdfBuffer = await generateAdpPaystubPdf(paystub);
+
+    const fileDate =
+      paystub.payDate instanceof Date
+        ? paystub.payDate.toISOString().slice(0, 10)
+        : 'paystub';
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="paystub_${fileDate}.pdf"`
+    );
+
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('Error generating paystub PDF (ADP-style):', err);
+    return res.status(500).json({ message: 'Error generating paystub PDF' });
   }
 });
 
