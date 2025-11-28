@@ -73,12 +73,22 @@ async function generateAdpPaystubPdf(paystub) {
   const html = await ejs.renderFile(templatePath, templateData);
 
   // Convert HTML → PDF buffer
-  return new Promise((resolve, reject) => {
-    pdf.create(html, { format: 'Letter', border: '5mm' }).toBuffer((err, buffer) => {
-      if (err) return reject(err);
-      resolve(buffer);
-    });
+ return new Promise((resolve, reject) => {
+  pdf.create(
+    html,
+    {
+      format: 'Letter',
+      border: '5mm',
+      timeout: 30000,
+      // Help PhantomJS/html-pdf load HTTPS assets like your background PNG
+      phantomArgs: ['--ignore-ssl-errors=yes', '--ssl-protocol=any']
+    }
+  ).toBuffer((err, buffer) => {
+    if (err) return reject(err);
+    resolve(buffer);
   });
+});
+
 }
 
 module.exports = {
