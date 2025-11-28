@@ -96,6 +96,15 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       max-width: 800px;
       margin: 0 auto;
     }
+        .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .logo img {
+      height: 32px;
+    }
+
     .row {
       display: flex;
       flex-direction: row;
@@ -168,12 +177,16 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
   <div class="page">
 
     <!-- Top check header -->
-    <div class="section row">
-      <div>
-        <div class="brand">NWF PAYROLL SERVICES</div>
-        <div class="sub-brand">PAYROLL SERVICES</div>
+       <div class="section row">
+      <div class="logo">
+        <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_PAYROLL_SERVICES.png?v=1764211664" alt="NWF Payroll Services Logo" />
+        <div>
+          <div class="brand">NWF PAYROLL SERVICES</div>
+          <div class="sub-brand">PAYROLL SERVICES</div>
+        </div>
       </div>
       <div class="check-meta">
+
         <table>
           <tr>
             <td class="label">Check Date</td>
