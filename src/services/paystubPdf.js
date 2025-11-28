@@ -15,6 +15,28 @@ async function generateAdpPaystubPdf(paystub) {
   const employeeFullName = `${paystub.employee.firstName || ''} ${paystub.employee.lastName || ''}`.trim();
 
   const payDate = paystub.payDate ? new Date(paystub.payDate) : null;
+  const fmtDate = d => (d ? new Date(d).toLocaleDateString('en-US') : '');
+
+const payDateFormatted = fmtDate(paystub.payDate);
+const payPeriodBeginFormatted = fmtDate(paystub.payPeriodStart);
+const payPeriodEndFormatted = fmtDate(paystub.payPeriodEnd);
+
+// Employee address (from schema)
+const addr = paystub.employee.address || {};
+const employeeAddressLine1 = addr.line1 || '';
+const employeeAddressLine2 = addr.line2 || '';
+const employeeCity = addr.city || '';
+const employeeState = addr.state || '';
+const employeeZip = addr.zip || '';
+
+// Employee ID + masked version (only last 6 visible)
+const externalIdRaw = (paystub.employee.externalEmployeeId || '').trim();
+let maskedEmployeeId = externalIdRaw;
+if (externalIdRaw && externalIdRaw.length >= 6) {
+  const last6 = externalIdRaw.slice(-6);
+  maskedEmployeeId = 'xxxxxx' + last6;
+}
+
   const payDateFormatted = payDate
     ? payDate.toLocaleDateString('en-US')
     : '';
