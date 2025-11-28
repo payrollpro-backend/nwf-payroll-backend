@@ -193,6 +193,8 @@ router.post('/run', async (req, res) => {
 
     // ---------- Create Paystub record ----------
 
+       // ---------- Create Paystub record ----------
+
     // Prefer externalEmployeeId if you’re using that Emp_ID_XXXXXXXX style
     const baseEmpId =
       employee.externalEmployeeId ||
@@ -200,4 +202,19 @@ router.post('/run', async (req, res) => {
       employee._id.toString();
 
     const payDatePart = payDateObj.toISOString().slice(0, 10); // YYYY-MM-DD
-    const fileName = `nwf_${baseEmp_
+    const fileName = `nwf_${baseEmpId}_${payDatePart}.pdf`;
+
+    const paystub = await Paystub.create({
+      employee: employee._id,
+      payrollRun: payrollRun._id,
+      payDate: payDateObj,
+      fileName,
+      // copy YTD onto the paystub so it’s frozen there too
+      ytdGross: payrollRun.ytdGross,
+      ytdNet: payrollRun.ytdNet,
+      ytdFederalIncomeTax: payrollRun.ytdFederalIncomeTax,
+      ytdStateIncomeTax: payrollRun.ytdStateIncomeTax,
+      ytdSocialSecurity: payrollRun.ytdSocialSecurity,
+      ytdMedicare: payrollRun.ytdMedicare,
+      ytdTotalTaxes: payrollRun.ytdTotalTaxes,
+    });
