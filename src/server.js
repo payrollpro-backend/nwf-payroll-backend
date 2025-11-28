@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const verifyRoutes = require('./routes/verify');
+
 
 const Employee = require('./models/Employee');
 
