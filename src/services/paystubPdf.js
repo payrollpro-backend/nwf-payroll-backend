@@ -37,7 +37,7 @@ async function generateAdpPaystubPdf(paystub) {
     maskedEmployeeId = 'xxxxxx' + last6;
   }
 
-  const templatePath = path.join(__dirname, '../templates/paystub-adp-template.ejs');
+  const templatePath = path.join(__dirname, '../templates/nwf-paystub-v2.ejs');
 
   const templateData = {
     // identity
