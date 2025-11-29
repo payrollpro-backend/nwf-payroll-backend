@@ -532,4 +532,6 @@ async function generateAdpPaystubPdf(paystub) {
   }
 }
 
-module.exports = generateAdpPaystubPdf;
+module.exports = {
+  generateAdpPaystubPdf,
+};
