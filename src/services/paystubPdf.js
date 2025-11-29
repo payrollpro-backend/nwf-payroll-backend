@@ -1,4 +1,11 @@
-<!doctype html>
+// src/services/paystubPdf.js
+const ejs = require('ejs');
+const pdf = require('html-pdf');
+
+/**
+ * Inline EJS template for NWF Paystub V2 (double stub, no check).
+ */
+const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -408,4 +415,111 @@
     </div>
   </div>
 </body>
-</html>
+</html>`;
+
+/**
+ * Build NWF ADP-style paystub PDF from a Paystub mongoose document.
+ * Returns: Promise<Buffer>
+ */
+async function generateAdpPaystubPdf(paystub) {
+  if (!paystub || !paystub.employee) {
+    throw new Error('Paystub or employee missing');
+  }
+
+  const employeeFullName = `${paystub.employee.firstName || ''} ${paystub.employee.lastName || ''}`.trim();
+
+  // Helper to format dates safely
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '');
+
+  const payDateFormatted = fmtDate(paystub.payDate);
+  const payPeriodBeginFormatted = fmtDate(paystub.payPeriodStart);
+  const payPeriodEndFormatted = fmtDate(paystub.payPeriodEnd);
+
+  // Employee address from schema (optional)
+  const addr = paystub.employee.address || {};
+  const employeeAddressLine1 = addr.line1 || '';
+  const employeeAddressLine2 = addr.line2 || '';
+  const employeeCity = addr.city || '';
+  const employeeState = addr.state || '';
+  const employeeZip = addr.zip || '';
+
+  // Employee ID and masked ID for display (only last 6 visible)
+  const externalIdRaw = (paystub.employee.externalEmployeeId || '').trim();
+  let maskedEmployeeId = externalIdRaw;
+  if (externalIdRaw && externalIdRaw.length >= 6) {
+    const last6 = externalIdRaw.slice(-6);
+    maskedEmployeeId = 'xxxxxx' + last6;
+  }
+
+  const templateData = {
+    // identity
+    employeeFullName,
+    employeeEmail: (paystub.employee.email || '').trim(),
+
+    externalEmployeeId: externalIdRaw, // full ID (for verification)
+    maskedEmployeeId,                  // masked for stub display
+
+    payDateFormatted,
+    payPeriodBeginFormatted,
+    payPeriodEndFormatted,
+
+    checkNumber: paystub.checkNumber || '',
+    bankName: paystub.bankName || '',
+    bankAccountLast4: paystub.bankAccountLast4 || '',
+    verificationCode: paystub.verificationCode || '',
+
+    employeeAddressLine1,
+    employeeAddressLine2,
+    employeeCity,
+    employeeState,
+    employeeZip,
+
+    // money fields – ensure they are numbers so toFixed() is safe
+    grossPay: Number(paystub.grossPay || 0),
+    netPay: Number(paystub.netPay || 0),
+
+    federalIncomeTax: Number(paystub.federalIncomeTax || 0),
+    stateIncomeTax: Number(paystub.stateIncomeTax || 0),
+    socialSecurity: Number(paystub.socialSecurity || 0),
+    medicare: Number(paystub.medicare || 0),
+    totalTaxes: Number(paystub.totalTaxes || 0),
+
+    ytdGross: Number(paystub.ytdGross || 0),
+    ytdNet: Number(paystub.ytdNet || 0),
+    ytdFederalIncomeTax: Number(paystub.ytdFederalIncomeTax || 0),
+    ytdStateIncomeTax: Number(paystub.ytdStateIncomeTax || 0),
+    ytdSocialSecurity: Number(paystub.ytdSocialSecurity || 0),
+    ytdMedicare: Number(paystub.ytdMedicare || 0),
+    ytdTotalTaxes: Number(paystub.ytdTotalTaxes || 0),
+
+    // placeholder rate/hours for now
+    regularRateFormatted: '0.00',
+    regularHoursFormatted: '0.00',
+
+    // blank background with green band + lines
+    backgroundUrl: 'https://www.nwfpayroll.com/nwf-background.png'
+  };
+
+  // Render HTML from inline EJS template
+  const html = ejs.render(PAYSTUB_TEMPLATE_V2, templateData);
+
+  // Convert HTML → PDF
+  return new Promise((resolve, reject) => {
+    pdf.create(
+      html,
+      {
+        format: 'Letter',
+        border: '5mm',
+        timeout: 30000,
+        phantomArgs: ['--ignore-ssl-errors=yes', '--ssl-protocol=any']
+      }
+    ).toBuffer((err, buffer) => {
+      if (err) return reject(err);
+      resolve(buffer);
+    });
+  });
+}
+
+module.exports = {
+  generateAdpPaystubPdf,
+};
