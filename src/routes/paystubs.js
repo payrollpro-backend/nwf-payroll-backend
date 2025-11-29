@@ -231,41 +231,30 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Server error fetching paystubs' });
   }
 });
-router.get('/paystubs/:id/pdf', async (req, res) => {
+router.get('/:id/pdf', async (req, res) => {
   try {
-    const { id } = req.params;
+    console.log('🔧 NWF PAYSTUB PDF V2 route hit for ID:', req.params.id);
 
-    const paystub = await Paystub.findById(id).populate('employee');
-
+    const paystub = await Paystub.findById(req.params.id).populate('employee');
     if (!paystub) {
-      return res.status(404).json({ message: 'Paystub not found' });
+      return res.status(404).send('Paystub not found');
     }
 
     const pdfBuffer = await generateAdpPaystubPdf(paystub);
 
-    const payDate =
-      paystub.payDate instanceof Date
-        ? paystub.payDate.toISOString().slice(0, 10) // YYYY-MM-DD
-        : 'paydate';
-
-    const employeeIdSafe = (
-      paystub.employee.externalEmployeeId ||
-      paystub.employee._id.toString()
-    ).replace(/[^a-zA-Z0-9_-]/g, '');
-
-    const fileName = `nwf_${employeeIdSafe}_${payDate}.pdf`;
-
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader(
       'Content-Disposition',
-      `inline; filename="${fileName}"`
+      `inline; filename="${paystub.fileName || 'paystub'}.pdf"`
     );
 
-    return res.send(pdfBuffer);
+    res.send(pdfBuffer);
   } catch (err) {
-    console.error('Error generating paystub PDF (ADP-style):', err);
-    return res.status(500).json({ message: 'Error generating paystub PDF' });
+    console.error('Error generating paystub PDF (ADP-style V2):', err);
+    res.status(500).send('Error generating paystub PDF');
   }
+});
+
 });
 
 
