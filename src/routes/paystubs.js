@@ -255,8 +255,6 @@ router.get('/:id/pdf', async (req, res) => {
   }
 });
 
-});
-
 
 // Employee: list paystubs by employee
 router.get('/employee/:employeeId', async (req, res) => {
