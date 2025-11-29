@@ -1,11 +1,90 @@
-// src/services/paystubPdf.js
-const ejs = require('ejs');
-const pdf = require('html-pdf');
+const ejs = require("ejs");
+const pdf = require("html-pdf");
+const path = require("path");
+const moment = require("moment");
 
 /**
- * Inline EJS template for NWF Paystub V2 (double stub, no check).
+ * Generate ADP-style NWF paystub PDF using your CorelDRAW template.
  */
-const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
+async function generateAdpPaystubPdf(paystub) {
+  try {
+    // -------------------------------
+    // FORMAT DATES
+    // -------------------------------
+    const payDate = paystub.payDate ? moment(paystub.payDate) : null;
+    const payPeriodBegin = paystub.payPeriodBegin
+      ? moment(paystub.payPeriodBegin)
+      : null;
+    const payPeriodEnd = paystub.payPeriodEnd
+      ? moment(paystub.payPeriodEnd)
+      : null;
+
+    const payDateFormatted = payDate ? payDate.format("MM/DD/YYYY") : "";
+    const payPeriodBeginFormatted = payPeriodBegin
+      ? payPeriodBegin.format("MM/DD/YYYY")
+      : "";
+    const payPeriodEndFormatted = payPeriodEnd
+      ? payPeriodEnd.format("MM/DD/YYYY")
+      : "";
+
+    // -------------------------------
+    // MASK EMPLOYEE ID (last 6 digits visible)
+    // -------------------------------
+    const fullEmployeeId = paystub.employee.externalEmployeeId || "";
+    let maskedEmployeeId = "";
+    if (fullEmployeeId.length >= 6) {
+      maskedEmployeeId =
+        "XXXXXX" + fullEmployeeId.slice(fullEmployeeId.length - 6);
+    }
+
+    // -------------------------------
+    // EMPLOYEE NAME PIECES
+    // -------------------------------
+    const employeeFirstName = paystub.employee.firstName || "";
+    const employeeLastName = paystub.employee.lastName || "";
+    const employeeFullName = `${employeeFirstName} ${employeeLastName}`.trim();
+
+    // -------------------------------
+    // EMPLOYEE ADDRESS (if stored)
+    // -------------------------------
+    const employeeAddress = paystub.employee.address || {};
+    const employeeAddressLine1 = employeeAddress.line1 || "";
+    const employeeAddressLine2 = employeeAddress.line2 || "";
+    const employeeCity = employeeAddress.city || "";
+    const employeeState = employeeAddress.state || "";
+    const employeeZip = employeeAddress.zip || "";
+
+    // -------------------------------
+    // NUMBERS FOR THE STUB
+    // -------------------------------
+    const grossPay = paystub.grossPay || 0;
+    const netPay = paystub.netPay || 0;
+
+    const federalIncomeTax = paystub.federalIncomeTax || 0;
+    const stateIncomeTax = paystub.stateIncomeTax || 0;
+    const socialSecurity = paystub.socialSecurity || 0;
+    const medicare = paystub.medicare || 0;
+
+    const ytdGross = paystub.ytdGross || 0;
+    const ytdNet = paystub.ytdNet || 0;
+    const ytdFederalIncomeTax = paystub.ytdFederalIncomeTax || 0;
+    const ytdStateIncomeTax = paystub.ytdStateIncomeTax || 0;
+    const ytdSocialSecurity = paystub.ytdSocialSecurity || 0;
+    const ytdMedicare = paystub.ytdMedicare || 0;
+
+    const regularHoursFormatted = (paystub.regularHours || 0).toFixed(2);
+    const regularRateFormatted = (paystub.regularRate || 0).toFixed(2);
+
+    // -------------------------------
+    // YOUR NEW 8.5x11 BACKGROUND IMAGE FROM COREL
+    // -------------------------------
+    const backgroundUrl = "https://www.nwfpayroll.com/nwf-paystub-bg.png";
+
+    // -------------------------------
+    // TEMPLATE HTML (THE ONE WE BUILT TO MATCH COREL)
+    // -------------------------------
+    const PAYSTUB_TEMPLATE_V2 = `
+<!doctype html>
 <html>
 <head>
   <meta charset="utf-8" />
@@ -13,7 +92,7 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
   <style>
     * {
       box-sizing: border-box;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: Arial, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     body {
@@ -42,100 +121,90 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
     .page-content {
       position: relative;
       z-index: 1;
-      /* slightly tighter top padding so it sits better in the boxes */
-      padding: 40px 70px 40px 70px;
+      padding: 40px 60px 40px 60px;
+      font-size: 12px;
     }
 
-    .top-header {
+    /* ===== TOP HEADER: LEFT COMPANY + RIGHT PAY INFO ===== */
+    .header-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 20px;
     }
 
-    .company-block-main {
-      font-size: 11px;
+    .header-left {
+      font-size: 12px;
       line-height: 1.4;
     }
 
-    .company-name-main {
-      font-size: 14px;
+    .header-left .company-name {
+      font-size: 16px;
       font-weight: 700;
-      letter-spacing: 0.04em;
+      margin-bottom: 3px;
     }
 
-    .nwf-block {
+    .header-left .company-line {
+      font-size: 12px;
+    }
+
+    .header-right {
       text-align: right;
-      font-size: 10px;
-      line-height: 1.4;
+      font-size: 12px;
+      line-height: 1.5;
+      margin-top: 70px;
     }
 
-    .nwf-title {
+    .header-right .label {
       font-weight: 700;
     }
 
-    .nwf-subtitle {
-      font-size: 9px;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-
-    .top-dates {
-      margin-top: 6px;
-      font-size: 10px;
-    }
-
-    .top-dates div {
-      margin-bottom: 2px;
-    }
-
+    /* ===== STUB: TOP HALF ===== */
     .top-stub {
-      margin-bottom: 26px;
+      margin-top: 55px;
     }
 
     .stub-main-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 10px;
     }
 
-    .stub-company-label {
-      font-size: 11px;
+    .employee-block-left {
+      font-size: 12px;
+      line-height: 1.4;
+    }
+
+    .employee-block-left .emp-label {
       font-weight: 700;
       margin-bottom: 4px;
     }
 
-    .employee-id-block {
-      font-size: 10px;
-      line-height: 1.4;
+    .employee-block-left .emp-line,
+    .employee-block-left .emp-id {
+      font-size: 12px;
     }
 
-    .employee-id-block .emp-name {
-      font-weight: 600;
-      margin-bottom: 2px;
-    }
-
-    .employee-id-block .emp-id {
-      font-size: 10px;
-    }
-
-    .employee-address-block {
-      font-size: 10px;
+    .employee-block-right {
       text-align: right;
-      line-height: 1.4;
+      font-size: 16px;
+      line-height: 1.3;
     }
 
-    .employee-address-name {
-      font-weight: 600;
-      font-size: 11px;
-      margin-bottom: 2px;
+    .employee-block-right .emp-name-big {
+      font-weight: 700;
+      margin-bottom: 4px;
     }
 
-    .tables-row {
+    .tables-row-top {
+      margin-top: 30px;
       display: flex;
-      gap: 20px;
-      margin-bottom: 14px;
+      gap: 40px;
+    }
+
+    .tables-row-bottom {
+      margin-top: 120px;
+      display: flex;
+      gap: 40px;
     }
 
     .col-half {
@@ -145,7 +214,7 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 10px;
+      font-size: 11px;
     }
 
     th, td {
@@ -161,19 +230,26 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
     }
 
     th {
-      font-size: 9px;
-      text-transform: uppercase;
-      color: #555;
+      font-size: 11px;
+      font-weight: 700;
     }
 
-    tfoot td {
+    .table-header-line {
+      height: 1px;
+      background-color: #000;
+      margin-bottom: 4px;
+      opacity: 0.7;
+    }
+
+    .deductions-title {
+      font-size: 12px;
       font-weight: 700;
-      border-top: 1px solid #d1d5db;
+      margin-bottom: 4px;
     }
 
     .netpay-row {
-      margin-top: 6px;
-      font-size: 11px;
+      margin-top: 8px;
+      font-size: 12px;
       font-weight: 700;
       display: flex;
       justify-content: flex-end;
@@ -181,74 +257,44 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
       align-items: baseline;
     }
 
-    .netpay-row .label {
-      font-weight: 700;
-    }
-
-    .netpay-row .amount {
-      font-weight: 700;
-    }
-
-    .netpay-row .ytd {
-      font-weight: 700;
-    }
-
-    .bottom-stub {
-      /* bring bottom stub up a bit so it sits in the second set of boxes */
-      margin-top: 36px;
-    }
-
-    .bottom-stub .tables-row {
-      margin-bottom: 12px;
-    }
-
-    .bottom-stub .netpay-row {
-      margin-top: 6px;
-    }
   </style>
 </head>
 <body>
   <div class="page">
-    <!-- BLANK BACKGROUND WITH BAND + LINES -->
     <img src="<%= backgroundUrl %>" class="page-bg" />
 
     <div class="page-content">
-      <!-- TOP HEADER -->
-      <div class="top-header">
-        <div class="company-block-main">
-          <div class="company-name-main">NSE MANAGEMENT INC</div>
-          <div>4711 Nutmeg Way SW</div>
-          <div>Lilburn GA 30047</div>
+
+      <!-- ===== TOP HEADER ROW ===== -->
+      <div class="header-row">
+
+        <div class="header-left">
+          <div class="company-name">NSE MANAGEMENT INC</div>
+          <div class="company-line">4711 Nutmeg Way SW</div>
+          <div class="company-line">Lilburn GA 30047</div>
         </div>
-        <div class="nwf-block">
-          <div class="nwf-title">NWF PAYROLL SERVICES</div>
-          <div class="nwf-subtitle">PAYROLL FOR SMALL BUSINESSES &amp; SELF- EMPLOYED</div>
-          <div class="top-dates">
-            <div>Check Date: <%= payDateFormatted %></div>
-            <div>Pay Period Beginning: <%= payPeriodBeginFormatted || '' %></div>
-            <div>Pay Period Ending: <%= payPeriodEndFormatted || '' %></div>
-          </div>
+
+        <div class="header-right">
+          <div><span class="label">Check Date:</span> <%= payDateFormatted %></div>
+          <div><span class="label">Pay Period Beginning:</span> <%= payPeriodBeginFormatted %></div>
+          <div><span class="label">Pay Period Ending:</span> <%= payPeriodEndFormatted %></div>
         </div>
+
       </div>
 
-      <!-- TOP STUB -->
+      <!-- ===== TOP STUB BLOCK ===== -->
       <div class="top-stub">
+
         <div class="stub-main-row">
-          <div>
-            <div class="stub-company-label">NSE MANAGEMENT INC</div>
-            <div class="employee-id-block">
-              <div class="emp-name"><%= employeeFullName %></div>
-              <div class="emp-id">
-                <% if (maskedEmployeeId) { %>
-                  Employee ID: <%= maskedEmployeeId %>
-                <% } else { %>
-                  Employee ID:
-                <% } %>
-              </div>
-            </div>
+
+          <div class="employee-block-left">
+            <div class="emp-label">EMPLOYEE NAME</div>
+            <div class="emp-line"><%= employeeLastName %>, <%= employeeFirstName %> (Employee)</div>
+            <div class="emp-id">Employee ID: <%= maskedEmployeeId %></div>
           </div>
-          <div class="employee-address-block">
-            <div class="employee-address-name"><%= employeeFullName %></div>
+
+          <div class="employee-block-right">
+            <div class="emp-name-big"><%= employeeLastName %>, <%= employeeFirstName %></div>
             <% if (employeeAddressLine1) { %>
               <div><%= employeeAddressLine1 %></div>
             <% } %>
@@ -257,16 +303,15 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
             <% } %>
             <% if (employeeCity || employeeState || employeeZip) { %>
               <div>
-                <%= employeeCity %><% if (employeeCity && (employeeState || employeeZip)) { %>, <% } %>
-                <%= employeeState %>
-                <%= employeeZip %>
+                <%= employeeCity %> <%= employeeState %> <%= employeeZip %>
               </div>
             <% } %>
           </div>
+
         </div>
 
-        <div class="tables-row">
-          <!-- Earnings -->
+        <div class="tables-row-top">
+
           <div class="col-half">
             <table>
               <thead>
@@ -278,248 +323,213 @@ const PAYSTUB_TEMPLATE_V2 = `<!doctype html>
                   <th>YTD</th>
                 </tr>
               </thead>
+            </table>
+            <div class="table-header-line"></div>
+            <table>
               <tbody>
                 <tr>
                   <td>Regular</td>
                   <td><%= regularHoursFormatted %></td>
                   <td><%= regularRateFormatted %></td>
-                  <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                  <td>$<%= (ytdGross || 0).toFixed(2) %></td>
+                  <td>$<%= grossPay.toFixed(2) %></td>
+                  <td>$<%= ytdGross.toFixed(2) %></td>
                 </tr>
               </tbody>
             </table>
           </div>
 
-          <!-- Deductions -->
           <div class="col-half">
+            <div class="deductions-title">DEDUCTIONS</div>
+
             <table>
               <thead>
                 <tr>
-                  <th>Deductions From Gross:</th>
+                  <th>Type</th>
                   <th>Current</th>
                   <th>YTD</th>
                 </tr>
               </thead>
+            </table>
+
+            <div class="table-header-line"></div>
+
+            <table>
               <tbody>
                 <tr>
-                  <td>Gross</td>
-                  <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                  <td>$<%= (ytdGross || 0).toFixed(2) %></td>
-                </tr>
-                <tr>
                   <td>Federal Income Tax</td>
-                  <td>($<%= (federalIncomeTax || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdFederalIncomeTax || 0).toFixed(2) %>)</td>
+                  <td>($<%= federalIncomeTax.toFixed(2) %>)</td>
+                  <td>($<%= ytdFederalIncomeTax.toFixed(2) %>)</td>
                 </tr>
                 <tr>
-                  <td>Social Security (Employee)</td>
-                  <td>($<%= (socialSecurity || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdSocialSecurity || 0).toFixed(2) %>)</td>
+                  <td>Social Security</td>
+                  <td>($<%= socialSecurity.toFixed(2) %>)</td>
+                  <td>($<%= ytdSocialSecurity.toFixed(2) %>)</td>
                 </tr>
                 <tr>
-                  <td>Medicare (Employee)</td>
-                  <td>($<%= (medicare || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdMedicare || 0).toFixed(2) %>)</td>
+                  <td>Medicare</td>
+                  <td>($<%= medicare.toFixed(2) %>)</td>
+                  <td>($<%= ytdMedicare.toFixed(2) %>)</td>
                 </tr>
                 <tr>
-                  <td>State of GA Income Tax</td>
-                  <td>($<%= (stateIncomeTax || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdStateIncomeTax || 0).toFixed(2) %>)</td>
+                  <td>State Income Tax</td>
+                  <td>($<%= stateIncomeTax.toFixed(2) %>)</td>
+                  <td>($<%= ytdStateIncomeTax.toFixed(2) %>)</td>
                 </tr>
               </tbody>
             </table>
           </div>
+
         </div>
 
         <div class="netpay-row">
-          <div class="label">Net Pay:</div>
-          <div class="amount">$ <%= (netPay || 0).toFixed(2) %></div>
-          <div class="ytd"><%= (ytdNet || 0).toFixed(2) %></div>
+          <div>Net Pay:</div>
+          <div>$<%= netPay.toFixed(2) %></div>
+          <div><%= ytdNet.toFixed(2) %></div>
         </div>
+
       </div>
 
-      <!-- BOTTOM STUB -->
-      <div class="bottom-stub">
-        <div class="tables-row">
-          <!-- Earnings copy -->
-          <div class="col-half">
-            <table>
-              <thead>
-                <tr>
-                  <th>Earnings</th>
-                  <th>Hours</th>
-                  <th>Rate</th>
-                  <th>Current</th>
-                  <th>YTD</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Regular</td>
-                  <td><%= regularHoursFormatted %></td>
-                  <td><%= regularRateFormatted %></td>
-                  <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                  <td>$<%= (ytdGross || 0).toFixed(2) %></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+      <!-- ===== BOTTOM STUB BLOCK ===== -->
+      <div class="tables-row-bottom">
 
-          <!-- Deductions copy -->
-          <div class="col-half">
-            <table>
-              <thead>
-                <tr>
-                  <th>Deductions From Gross:</th>
-                  <th>Current</th>
-                  <th>YTD</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Gross</td>
-                  <td>$<%= (grossPay || 0).toFixed(2) %></td>
-                  <td>$<%= (ytdGross || 0).toFixed(2) %></td>
-                </tr>
-                <tr>
-                  <td>Federal Income Tax</td>
-                  <td>($<%= (federalIncomeTax || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdFederalIncomeTax || 0).toFixed(2) %>)</td>
-                </tr>
-                <tr>
-                  <td>Social Security (Employee)</td>
-                  <td>($<%= (socialSecurity || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdSocialSecurity || 0).toFixed(2) %>)</td>
-                </tr>
-                <tr>
-                  <td>Medicare (Employee)</td>
-                  <td>($<%= (medicare || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdMedicare || 0).toFixed(2) %>)</td>
-                </tr>
-                <tr>
-                  <td>State of GA Income Tax</td>
-                  <td>($<%= (stateIncomeTax || 0).toFixed(2) %>)</td>
-                  <td>($<%= (ytdStateIncomeTax || 0).toFixed(2) %>)</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+        <div class="col-half">
+          <table>
+            <thead>
+              <tr>
+                <th>Earnings</th>
+                <th>Hours</th>
+                <th>Rate</th>
+                <th>Current</th>
+                <th>YTD</th>
+              </tr>
+            </thead>
+          </table>
+
+          <div class="table-header-line"></div>
+
+          <table>
+            <tbody>
+              <tr>
+                <td>Regular</td>
+                <td><%= regularHoursFormatted %></td>
+                <td><%= regularRateFormatted %></td>
+                <td>$<%= grossPay.toFixed(2) %></td>
+                <td>$<%= ytdGross.toFixed(2) %></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div class="netpay-row">
-          <div class="label">Net Pay:</div>
-          <div class="amount">$ <%= (netPay || 0).toFixed(2) %></div>
-          <div class="ytd"><%= (ytdNet || 0).toFixed(2) %></div>
+        <div class="col-half">
+          <div class="deductions-title">DEDUCTIONS</div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>Current</th>
+                <th>YTD</th>
+              </tr>
+            </thead>
+          </table>
+
+          <div class="table-header-line"></div>
+
+          <table>
+            <tbody>
+              <tr>
+                <td>Federal Income Tax</td>
+                <td>($<%= federalIncomeTax.toFixed(2) %>)</td>
+                <td>($<%= ytdFederalIncomeTax.toFixed(2) %>)</td>
+              </tr>
+              <tr>
+                <td>Social Security</td>
+                <td>($<%= socialSecurity.toFixed(2) %>)</td>
+                <td>($<%= ytdSocialSecurity.toFixed(2) %>)</td>
+              </tr>
+              <tr>
+                <td>Medicare</td>
+                <td>($<%= medicare.toFixed(2) %>)</td>
+                <td>($<%= ytdMedicare.toFixed(2) %>)</td>
+              </tr>
+              <tr>
+                <td>State Income Tax</td>
+                <td>($<%= stateIncomeTax.toFixed(2) %>)</td>
+                <td>($<%= ytdStateIncomeTax.toFixed(2) %>)</td>
+              </tr>
+            </tbody>
+          </table>
+
         </div>
+
       </div>
+
+      <div class="netpay-row">
+        <div>Net Pay:</div>
+        <div>$<%= netPay.toFixed(2) %></div>
+        <div><%= ytdNet.toFixed(2) %></div>
+      </div>
+
     </div>
   </div>
 </body>
-</html>`;
+</html>
+`;
 
-/**
- * Build NWF ADP-style paystub PDF from a Paystub mongoose document.
- * Returns: Promise<Buffer>
- */
-async function generateAdpPaystubPdf(paystub) {
-  if (!paystub || !paystub.employee) {
-    throw new Error('Paystub or employee missing');
-  }
-
-  const employeeFullName = `${paystub.employee.firstName || ''} ${paystub.employee.lastName || ''}`.trim();
-
-  // Helper to format dates safely
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('en-US') : '');
-
-  const payDateFormatted = fmtDate(paystub.payDate);
-  const payPeriodBeginFormatted = fmtDate(paystub.payPeriodStart);
-  const payPeriodEndFormatted = fmtDate(paystub.payPeriodEnd);
-
-  // Employee address from schema (optional)
-  const addr = paystub.employee.address || {};
-  const employeeAddressLine1 = addr.line1 || '';
-  const employeeAddressLine2 = addr.line2 || '';
-  const employeeCity = addr.city || '';
-  const employeeState = addr.state || '';
-  const employeeZip = addr.zip || '';
-
-  // Employee ID and masked ID for display (only last 6 visible)
-  const externalIdRaw = (paystub.employee.externalEmployeeId || '').trim();
-  let maskedEmployeeId = externalIdRaw;
-  if (externalIdRaw && externalIdRaw.length >= 6) {
-    const last6 = externalIdRaw.slice(-6);
-    maskedEmployeeId = 'xxxxxx' + last6;
-  }
-
-  const templateData = {
-    // identity
-    employeeFullName,
-    employeeEmail: (paystub.employee.email || '').trim(),
-
-    externalEmployeeId: externalIdRaw, // full ID (for verification)
-    maskedEmployeeId,                  // masked for stub display
-
-    payDateFormatted,
-    payPeriodBeginFormatted,
-    payPeriodEndFormatted,
-
-    checkNumber: paystub.checkNumber || '',
-    bankName: paystub.bankName || '',
-    bankAccountLast4: paystub.bankAccountLast4 || '',
-    verificationCode: paystub.verificationCode || '',
-
-    employeeAddressLine1,
-    employeeAddressLine2,
-    employeeCity,
-    employeeState,
-    employeeZip,
-
-    // money fields – ensure they are numbers so toFixed() is safe
-    grossPay: Number(paystub.grossPay || 0),
-    netPay: Number(paystub.netPay || 0),
-
-    federalIncomeTax: Number(paystub.federalIncomeTax || 0),
-    stateIncomeTax: Number(paystub.stateIncomeTax || 0),
-    socialSecurity: Number(paystub.socialSecurity || 0),
-    medicare: Number(paystub.medicare || 0),
-    totalTaxes: Number(paystub.totalTaxes || 0),
-
-    ytdGross: Number(paystub.ytdGross || 0),
-    ytdNet: Number(paystub.ytdNet || 0),
-    ytdFederalIncomeTax: Number(paystub.ytdFederalIncomeTax || 0),
-    ytdStateIncomeTax: Number(paystub.ytdStateIncomeTax || 0),
-    ytdSocialSecurity: Number(paystub.ytdSocialSecurity || 0),
-    ytdMedicare: Number(paystub.ytdMedicare || 0),
-    ytdTotalTaxes: Number(paystub.ytdTotalTaxes || 0),
-
-    // placeholder rate/hours for now
-    regularRateFormatted: '0.00',
-    regularHoursFormatted: '0.00',
-
-    // blank background with green band + lines
-    backgroundUrl: 'https://www.nwfpayroll.com/nwf-background.png'
-  };
-
-  // Render HTML from inline EJS template
-  const html = ejs.render(PAYSTUB_TEMPLATE_V2, templateData);
-
-  // Convert HTML → PDF
-  return new Promise((resolve, reject) => {
-    pdf.create(
-      html,
-      {
-        format: 'Letter',
-        border: '5mm',
-        timeout: 30000,
-        phantomArgs: ['--ignore-ssl-errors=yes', '--ssl-protocol=any']
-      }
-    ).toBuffer((err, buffer) => {
-      if (err) return reject(err);
-      resolve(buffer);
+    // -------------------------------
+    // RENDER HTML USING EJS
+    // -------------------------------
+    const html = await ejs.render(PAYSTUB_TEMPLATE_V2, {
+      backgroundUrl,
+      employeeFullName,
+      employeeFirstName,
+      employeeLastName,
+      employeeAddressLine1,
+      employeeAddressLine2,
+      employeeCity,
+      employeeState,
+      employeeZip,
+      maskedEmployeeId,
+      payDateFormatted,
+      payPeriodBeginFormatted,
+      payPeriodEndFormatted,
+      regularHoursFormatted,
+      regularRateFormatted,
+      grossPay,
+      netPay,
+      federalIncomeTax,
+      stateIncomeTax,
+      socialSecurity,
+      medicare,
+      ytdGross,
+      ytdNet,
+      ytdFederalIncomeTax,
+      ytdStateIncomeTax,
+      ytdSocialSecurity,
+      ytdMedicare
     });
-  });
+
+    // -------------------------------
+    // GENERATE PDF
+    // -------------------------------
+    const pdfOptions = {
+      format: "Letter",
+      border: "5mm",
+      timeout: 30000,
+      phantomArgs: ["--ignore-ssl-errors=yes", "--ssl-protocol=any"],
+    };
+
+    return new Promise((resolve, reject) => {
+      pdf.create(html, pdfOptions).toBuffer((err, buffer) => {
+        if (err) return reject(err);
+        resolve(buffer);
+      });
+    });
+
+  } catch (err) {
+    console.error("Error in generateAdpPaystubPdf:", err);
+    throw err;
+  }
 }
 
-module.exports = {
-  generateAdpPaystubPdf,
-};
+module.exports = generateAdpPaystubPdf;
