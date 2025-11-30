@@ -1,4 +1,4 @@
-// server.js (or index.js)
+\// server.js (or index.js)
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -7,12 +7,12 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const verifyRoutes = require('./routes/verify');
 
-
 const Employee = require('./models/Employee');
 
 // ⬇️ ROUTE IMPORTS (ONE paystubs import only)
 const authRoutes = require('./routes/auth');
-const employerRoutes = require('./routes/employers');
+const employerRoutes = require('./routes/employers');       // existing employer routes
+const employersMeRoutes = require('./routes/employersMe');  // NEW: /me, /me/employees, etc.
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs'); // <-- use THIS one, single source
@@ -33,12 +33,15 @@ app.get('/', (req, res) => {
 
 // MOUNT ROUTES
 app.use('/api/auth', authRoutes);
-app.use('/api/employers', employerRoutes);
+
+// Both routers share the same /api/employers base path
+app.use('/api/employers', employerRoutes);      // your existing employer routes
+app.use('/api/employers', employersMeRoutes);   // new /me, /me/employees, /me/payroll-runs, /me/paystubs
+
 app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes); // <-- mounted once
 app.use('/api/verify-paystub', verifyRoutes);
-
 
 // === DEFAULT ADMIN SEEDER ===
 async function ensureDefaultAdmin() {
