@@ -7,7 +7,9 @@ const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
-const requireAuth = require('../middleware/auth'); // make sure this exists
+
+// IMPORTANT: destructure requireAuth from the exported object
+const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -228,8 +230,8 @@ router.get('/me/payroll-runs', requireAuth, async (req, res) => {
 /**
  * GET /api/employers/me/paystubs
  * List paystubs for this employer.
- * Assumes Paystub has an `employer` field. If not, you can change this
- * to derive via populated payrollRun.employer instead.
+ * Assumes Paystub has an `employer` field. If not, adjust to derive
+ * via populated payrollRun.employer instead.
  */
 router.get('/me/paystubs', requireAuth, async (req, res) => {
   try {
@@ -246,7 +248,6 @@ router.get('/me/paystubs', requireAuth, async (req, res) => {
         .json({ error: 'Employer ID missing on token/user' });
     }
 
-    // Preferred if Paystub has `employer`:
     const paystubs = await Paystub.find({ employer: employerId })
       .populate('employee')
       .sort({ payDate: -1, createdAt: -1 })
