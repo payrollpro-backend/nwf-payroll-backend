@@ -1,5 +1,36 @@
-// POST /api/employers/register
-// Public endpoint to create a new employer + employer user and log them in
+// src/routes/employers.js
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
+const Employer = require('../models/Employer');
+const Employee = require('../models/Employee');
+const PayrollRun = require('../models/PayrollRun');
+const Paystub = require('../models/Paystub');
+const requireAuth = require('../middleware/auth'); // make sure this exists
+
+const router = express.Router();
+
+// Use same JWT secret + payload shape as auth.js
+const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
+
+function signToken(user) {
+  return jwt.sign(
+    {
+      id: user._id.toString(),
+      role: user.role,
+      employerId: user.employer ? user.employer.toString() : null,
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
+
+/**
+ * POST /api/employers/register
+ * Public endpoint to create a new Employer + employer login user.
+ * Returns a token + user object so the frontend can log them in immediately.
+ */
 router.post('/register', async (req, res) => {
   try {
     const {
@@ -13,21 +44,21 @@ router.post('/register', async (req, res) => {
       state,
       zip,
 
-      // Employer user (login) section
+      // Employer login user
       firstName,
       lastName,
       email,
       password,
     } = req.body || {};
 
-    // Basic validation
+    // Basic required fields
     if (!companyName || !firstName || !lastName || !email || !password) {
       return res.status(400).json({
         error: 'companyName, firstName, lastName, email and password are required',
       });
     }
 
-    // Prevent duplicate user
+    // Prevent duplicate login email
     const existingUser = await Employee.findOne({ email });
     if (existingUser) {
       return res.status(400).json({
@@ -35,7 +66,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Create Employer record (schema will ignore unknown fields if not defined)
+    // Create Employer record
     const employer = await Employer.create({
       companyName,
       ein: ein || '',
@@ -49,10 +80,10 @@ router.post('/register', async (req, res) => {
       contactEmail: email,
     });
 
-    // Hash password for employer user
+    // Hash employer user password
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // Create the employer "user" in Employee collection
+    // Create employer user in Employee collection
     const employerUser = await Employee.create({
       firstName,
       lastName,
@@ -87,6 +118,145 @@ router.post('/register', async (req, res) => {
     });
   } catch (err) {
     console.error('employer register error:', err);
-    res.status(500).json({ error: err.message || 'Employer registration failed' });
+    res
+      .status(500)
+      .json({ error: err.message || 'Employer registration failed' });
   }
 });
+
+/**
+ * GET /api/employers/me
+ * Return the employer profile for the logged in employer user.
+ */
+router.get('/me', requireAuth, async (req, res) => {
+  try {
+    // requireAuth should have decoded token → req.user
+    const user = req.user;
+
+    if (!user || user.role !== 'employer') {
+      return res.status(403).json({ error: 'Employer access only' });
+    }
+
+    let employerId = user.employerId || null;
+
+    let employer = null;
+    if (employerId) {
+      employer = await Employer.findById(employerId).lean();
+    }
+
+    // Fallback: try matching by contactEmail
+    if (!employer) {
+      employer = await Employer.findOne({ contactEmail: user.email }).lean();
+    }
+
+    if (!employer) {
+      return res.status(404).json({ error: 'Employer profile not found' });
+    }
+
+    res.json(employer);
+  } catch (err) {
+    console.error('employer /me error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/employers/me/employees
+ * List employees that belong to this employer.
+ */
+router.get('/me/employees', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user || user.role !== 'employer') {
+      return res.status(403).json({ error: 'Employer access only' });
+    }
+
+    const employerId = user.employerId;
+
+    if (!employerId) {
+      return res
+        .status(400)
+        .json({ error: 'Employer ID missing on token/user' });
+    }
+
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json(employees);
+  } catch (err) {
+    console.error('employer /me/employees error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/employers/me/payroll-runs
+ * List payroll runs for this employer.
+ */
+router.get('/me/payroll-runs', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user || user.role !== 'employer') {
+      return res.status(403).json({ error: 'Employer access only' });
+    }
+
+    const employerId = user.employerId;
+    if (!employerId) {
+      return res
+        .status(400)
+        .json({ error: 'Employer ID missing on token/user' });
+    }
+
+    const runs = await PayrollRun.find({ employer: employerId })
+      .populate('employee')
+      .sort({ payDate: -1, createdAt: -1 })
+      .lean();
+
+    res.json(runs);
+  } catch (err) {
+    console.error('employer /me/payroll-runs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/employers/me/paystubs
+ * List paystubs for this employer.
+ * Assumes Paystub has an `employer` field. If not, you can change this
+ * to derive via populated payrollRun.employer instead.
+ */
+router.get('/me/paystubs', requireAuth, async (req, res) => {
+  try {
+    const user = req.user;
+
+    if (!user || user.role !== 'employer') {
+      return res.status(403).json({ error: 'Employer access only' });
+    }
+
+    const employerId = user.employerId;
+    if (!employerId) {
+      return res
+        .status(400)
+        .json({ error: 'Employer ID missing on token/user' });
+    }
+
+    // Preferred if Paystub has `employer`:
+    const paystubs = await Paystub.find({ employer: employerId })
+      .populate('employee')
+      .sort({ payDate: -1, createdAt: -1 })
+      .lean();
+
+    res.json(paystubs);
+  } catch (err) {
+    console.error('employer /me/paystubs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
