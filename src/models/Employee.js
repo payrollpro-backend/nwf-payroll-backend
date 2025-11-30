@@ -71,50 +71,33 @@ const EmployeeSchema = new Schema(
       default: Date.now,
     },
 
-    // NEW: front-end "startDate" field
+    // start date (front-end "startDate" field)
     startDate: {
       type: Date,
       default: Date.now,
     },
 
-    // NEW: active / inactive status
+    // active / inactive status
     status: {
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
     },
 
-    // ============= TAX & WITHHOLDING SETTINGS =============
-
-    // Filing status like other payroll systems
-    filingStatus: {
-      type: String,
-      enum: [
-        'single',
-        'married',
-        'married_filing_separately',
-        'head_of_household',
-        'other',
-      ],
-      default: 'single',
-    },
-
-    // Simple percentage-based withholding (Option 1)
-    // e.g. 0.18 for 18%
-    federalWithholdingRate: { type: Number, default: 0 }, // 0–1 decimal
-    stateWithholdingRate: { type: Number, default: 0 },   // 0–1 decimal
-
-    // Optional extra flat amount per paycheck
-    // (like "Additional amount" box on W-4)
-    extraWithholdingFederal: { type: Number, default: 0 }, // dollars per check
-    extraWithholdingState: { type: Number, default: 0 },   // dollars per check
-
-    // Optional flags if someone is exempt from withholding
-    exemptFederal: { type: Boolean, default: false },
-    exemptState: { type: Boolean, default: false },
-
+    // optional stored “default” tax settings for employee
+    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 for 18%
+    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05
   },
   { timestamps: true }
 );
+
+// 🔹 Auto-generate a unique externalEmployeeId if empty
+EmployeeSchema.pre('save', function (next) {
+  if (!this.externalEmployeeId) {
+    const random = Math.floor(100000000 + Math.random() * 900000000); // 9-digit number
+    this.externalEmployeeId = `Emp_ID_${random}`;
+  }
+  next();
+});
 
 module.exports = mongoose.model('Employee', EmployeeSchema);
