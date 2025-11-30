@@ -66,6 +66,42 @@ async function ensureDefaultAdmin() {
   console.log('✅ Created default admin:', email, 'password:', password);
 }
 
+// === DEFAULT EMPLOYER SEEDER ===
+async function ensureDefaultEmployer() {
+  const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
+  const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
+
+  let employer = await Employee.findOne({ email });
+
+  if (!employer) {
+    // Create a brand-new employer user
+    const passwordHash = await bcrypt.hash(defaultPassword, 10);
+    employer = await Employee.create({
+      firstName: 'NWF',
+      lastName: 'Employer',
+      email,
+      passwordHash,
+      role: 'employer',
+    });
+
+    console.log('✅ Created default employer:', email, 'password:', defaultPassword);
+    return;
+  }
+
+  // If it already exists, just make sure role is employer.
+  employer.role = 'employer';
+
+  // If it has no password set yet, give it the default.
+  if (!employer.passwordHash) {
+    employer.passwordHash = await bcrypt.hash(defaultPassword, 10);
+    console.log('✅ Default employer existed; set password for:', email, 'password:', defaultPassword);
+  } else {
+    console.log('✅ Default employer existed; role set to employer:', email);
+  }
+
+  await employer.save();
+}
+
 // DB + SERVER START
 const mongoUri = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
@@ -81,6 +117,7 @@ mongoose
     console.log('✅ Connected to MongoDB');
 
     await ensureDefaultAdmin();
+    await ensureDefaultEmployer();   // 👈 Make sure your employer user exists / is set
 
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
