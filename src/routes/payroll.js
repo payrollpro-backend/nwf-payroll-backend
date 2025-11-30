@@ -1,13 +1,9 @@
 // src/routes/payroll.js
-
-
 const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
-const { calculatePaycheck } = require('../payrollEngine');
 const { computeTaxesForPaycheck } = require('../services/taxCalculator');
-
 
 const router = express.Router();
 
@@ -20,7 +16,7 @@ router.post('/run', async (req, res) => {
   try {
     const {
       employeeId,
-      // accept both your old and new naming
+      // accept both old and new naming
       payPeriodStart,
       payPeriodEnd,
       periodStart,
@@ -49,7 +45,7 @@ router.post('/run', async (req, res) => {
         .json({ error: 'grossPay must be a positive number' });
     }
 
-    // Normalize period fields (so your DB uses consistent names)
+    // Normalize period fields
     const finalPeriodStart = periodStart || payPeriodStart || null;
     const finalPeriodEnd = periodEnd || payPeriodEnd || null;
 
@@ -60,11 +56,9 @@ router.post('/run', async (req, res) => {
     }
 
     const yearStart = new Date(payDateObj.getFullYear(), 0, 1); // Jan 1
-
     const hireDate = employee.hireDate ? new Date(employee.hireDate) : null;
     const ytdStart = hireDate && hireDate > yearStart ? hireDate : yearStart;
 
-    // Aggregate previous payroll runs in the same calendar year
     const prevAgg = await PayrollRun.aggregate([
       {
         $match: {
@@ -96,10 +90,10 @@ router.post('/run', async (req, res) => {
       taxes: 0,
     };
 
-    // ---------- FEED DATA INTO THE NEW PAYROLL ENGINE ----------
-
+    // ---------- TAX & NET PAY USING EMPLOYEE SETTINGS ----------
     const hours = Number(hoursWorked) || 0;
 
+    // (we still keep the hourlyRate snapshot for reference)
     const rate =
       typeof employee.hourlyRate === 'number' && employee.hourlyRate > 0
         ? employee.hourlyRate
@@ -108,49 +102,21 @@ router.post('/run', async (req, res) => {
         : 0;
 
     const payFrequency = employee.payFrequency || 'biweekly';
-    const filingStatus = employee.filingStatus || 'single';
-
-    const stateCode =
-      employee.stateCode ||
-      employee.state ||
-      (employee.address && employee.address.state) ||
-      'GA';
-
-    // Approximate YTD Social Security wages for cap logic
-    const ytdSocialSecurityWages =
-      prev.ss && prev.ss > 0 ? prev.ss / 0.062 : 0;
-
-    const preTaxDeductions = 0; // extend later when you add 401k/health, etc.
-
-    const engineResult = calculatePaycheck({
-      employeeId: employee._id.toString(),
-      hours,
-      rate,
-      payFrequency,
-      filingStatus,
-      stateCode,
-      ytdSocialSecurityWages,
-      preTaxDeductions,
-    });
 
     const {
-      deductions: {
-        federalIncomeTax,
-        stateIncomeTax,
-        socialSecurity,
-        medicare,
-        total: totalTaxes,
-      },
+      federalIncomeTax,
+      stateIncomeTax,
+      socialSecurity,
+      medicare,
+      totalTaxes,
       netPay,
-    } = engineResult;
+    } = computeTaxesForPaycheck(employee, gross);
 
     // ---------- Create payroll run with YTD snapshot ----------
-
     const payrollRun = await PayrollRun.create({
       employee: employee._id,
       employer: employee.employer || null,
 
-      // freeze pay settings at the time of the run (if present on Employee)
       payType: employee.payType || 'hourly',
       payFrequency,
 
@@ -181,7 +147,6 @@ router.post('/run', async (req, res) => {
     });
 
     // ---------- Create Paystub record ----------
-
     const baseEmpId =
       employee.externalEmployeeId ||
       employee.employeeId ||
@@ -195,6 +160,15 @@ router.post('/run', async (req, res) => {
       payrollRun: payrollRun._id,
       payDate: payDateObj,
       fileName,
+
+      grossPay: gross,
+      netPay,
+      federalIncomeTax,
+      stateIncomeTax,
+      socialSecurity,
+      medicare,
+      totalTaxes,
+
       ytdGross: payrollRun.ytdGross,
       ytdNet: payrollRun.ytdNet,
       ytdFederalIncomeTax: payrollRun.ytdFederalIncomeTax,
