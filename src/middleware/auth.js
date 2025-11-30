@@ -1,49 +1,39 @@
+// src/middleware/auth.js
 const jwt = require('jsonwebtoken');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
+
 /**
- * Basic JWT auth middleware.
- * Looks for "Authorization: Bearer <token>"
+ * requireAuth(['employer'])  -> only employer role allowed
+ * requireAuth(['admin'])     -> only admin
+ * requireAuth(['admin', 'employer']) -> either
  */
-function auth(req, res, next) {
-  try {
-    const header = req.headers.authorization || '';
+function requireAuth(allowedRoles = []) {
+  return function (req, res, next) {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : null;
 
-    if (!header.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header' });
-    }
-
-    const token = header.split(' ')[1];
     if (!token) {
-      return res.status(401).json({ error: 'Missing token' });
+      return res.status(401).json({ error: 'Missing auth token' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    try {
+      const payload = jwt.verify(token, JWT_SECRET);
+      // payload came from signToken in auth.js: { id, role, employerId }
 
-    req.user = {
-      id: decoded.id,
-      role: decoded.role,
-      employerId: decoded.employerId || null,
-    };
+      if (allowedRoles.length && !allowedRoles.includes(payload.role)) {
+        return res.status(403).json({ error: 'Forbidden for this role' });
+      }
 
-    next();
-  } catch (err) {
-    console.error('Auth middleware error:', err.message);
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
-  }
+      req.user = payload; // make payload available on req.user
+      next();
+    } catch (err) {
+      console.error('JWT verify error:', err);
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+  };
 }
 
-function adminOnly(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-}
-
-function employerOnly(req, res, next) {
-  if (!req.user || (req.user.role !== 'employer' && req.user.role !== 'admin')) {
-    return res.status(403).json({ error: 'Employer access required' });
-  }
-  next();
-}
-
-module.exports = { auth, adminOnly, employerOnly };
+module.exports = { requireAuth };
