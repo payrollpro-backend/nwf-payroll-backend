@@ -19,7 +19,6 @@ const EmployeeSchema = new Schema(
       default: 'employee',
     },
 
-    // External / display employee ID like Emp_ID_XXXXXXXXX
     externalEmployeeId: { type: String, default: '' },
 
     companyName: { type: String, default: '' },
@@ -39,25 +38,20 @@ const EmployeeSchema = new Schema(
     },
 
     directDeposit: {
-      accountType: { type: String, default: '' }, // checking / savings
+      accountType: { type: String, default: '' },
       bankName: { type: String, default: '' },
       routingNumber: { type: String, default: '' },
-      accountNumberLast4: { type: String, default: '' }, // store last 4 only
+      accountNumberLast4: { type: String, default: '' },
     },
 
-    /**
-     * Pay configuration
-     * - payType: hourly vs salary
-     * - payFrequency: weekly, biweekly, semimonthly, monthly
-     */
     payType: {
       type: String,
       enum: ['hourly', 'salary'],
       default: 'hourly',
     },
 
-    hourlyRate: { type: Number, default: 0 },   // used when payType = 'hourly'
-    salaryAmount: { type: Number, default: 0 }, // annual salary when payType = 'salary'
+    hourlyRate: { type: Number, default: 0 },
+    salaryAmount: { type: Number, default: 0 },
 
     payFrequency: {
       type: String,
@@ -65,28 +59,31 @@ const EmployeeSchema = new Schema(
       default: 'biweekly',
     },
 
-    // Hire date used for YTD context (earlier than this is effectively 0)
-    hireDate: {
-      type: Date,
-      default: Date.now,
+    // ✅ NEW Filing Status field
+    filingStatus: {
+      type: String,
+      enum: [
+        'single_or_mfs',
+        'married_joint',
+        'married_separate',
+        'head_of_household',
+        'qualifying_surviving_spouse'
+      ],
+      default: 'single_or_mfs',
     },
 
-    // 🔹 NEW: start date (front-end "startDate" field)
-    startDate: {
-      type: Date,
-      default: Date.now,
-    },
+    hireDate: { type: Date, default: Date.now },
 
-    // 🔹 NEW: active / inactive status
+    startDate: { type: Date, default: Date.now },
+
     status: {
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
     },
 
-    // optional stored “default” tax settings for employee
-    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 for 18%
-    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05
+    federalWithholdingRate: { type: Number, default: 0 },
+    stateWithholdingRate: { type: Number, default: 0 },
 
   },
   { timestamps: true }
