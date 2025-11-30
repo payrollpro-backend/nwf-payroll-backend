@@ -64,6 +64,19 @@ const EmployeeSchema = new Schema(
       enum: ['weekly', 'biweekly', 'semimonthly', 'monthly'],
       default: 'biweekly',
     },
+        payFrequency: {
+      type: String,
+      enum: ['weekly', 'biweekly', 'semimonthly', 'monthly'],
+      default: 'biweekly',
+    },
+
+    // 🔹 Filing status used by tax engine
+    filingStatus: {
+      type: String,
+      enum: ['single', 'married', 'head_of_household'],
+      default: 'single',
+    },
+
 
     // Hire date used for YTD context (earlier than this is effectively 0)
     hireDate: {
