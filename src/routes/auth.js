@@ -143,6 +143,87 @@ router.post('/login', async (req, res) => {
 });
 
 /**
+ * Employer-only login wrapper
+ * POST /api/auth/employer/login
+ * - Same behavior as /login, but enforces role === 'employer'
+ */
+router.post('/employer/login', async (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password) {
+      return res
+        .status(400)
+        .json({ error: 'Missing email or password', body: req.body });
+    }
+
+    // Look up the user by email
+    let user = await Employee.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ error: 'User not found for this email' });
+    }
+
+    // Must be an employer account
+    if (user.role !== 'employer') {
+      return res
+        .status(403)
+        .json({ error: 'This account is not set up as an employer' });
+    }
+
+    // First-time login: set password if none exists yet
+    if (!user.passwordHash) {
+      const passwordHash = await bcrypt.hash(password, 10);
+      user.passwordHash = passwordHash;
+
+      // safety: make sure role is employer
+      if (!user.role) {
+        user.role = 'employer';
+      }
+
+      await user.save();
+
+      const token = signToken(user);
+      return res.json({
+        token,
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          employerId: user.employer || null,
+        },
+      });
+    }
+
+    // Normal password check
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) {
+      return res.status(400).json({ error: 'Invalid password' });
+    }
+
+    const token = signToken(user);
+
+    res.json({
+      token,
+      user: {
+        id: user._id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        role: user.role,
+        employerId: user.employer || null,
+      },
+    });
+  } catch (err) {
+    console.error('employer/login error:', err);
+    res
+      .status(400)
+      .json({ error: err.message || 'Employer login failed' });
+  }
+});
+
+/**
  * Admin password reset helper
  * - If user does not exist: create them as ADMIN and set password
  * - If user exists: force role=admin and update password
