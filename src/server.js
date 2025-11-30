@@ -88,19 +88,19 @@ async function ensureDefaultEmployer() {
     return;
   }
 
-  // If it already exists, just make sure role is employer.
+  // If it already exists, force role=employer and reset password to default
   employer.role = 'employer';
-
-  // If it has no password set yet, give it the default.
-  if (!employer.passwordHash) {
-    employer.passwordHash = await bcrypt.hash(defaultPassword, 10);
-    console.log('✅ Default employer existed; set password for:', email, 'password:', defaultPassword);
-  } else {
-    console.log('✅ Default employer existed; role set to employer:', email);
-  }
-
+  employer.passwordHash = await bcrypt.hash(defaultPassword, 10);
   await employer.save();
+
+  console.log(
+    '✅ Default employer existed; role set to employer and password reset for:',
+    email,
+    'password:',
+    defaultPassword
+  );
 }
+
 
 // DB + SERVER START
 const mongoUri = process.env.MONGO_URI;
