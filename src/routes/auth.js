@@ -265,5 +265,38 @@ router.patch('/admin-reset-password', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+/**
+ * Generic password reset for any role (admin/employer/employee)
+ * This is intended for OWNER/ADMIN use via API tool (Postman, etc).
+ * It does NOT change the user's role – only updates passwordHash.
+ */
+router.patch('/reset-password', async (req, res) => {
+  try {
+    const { email, newPassword } = req.body || {};
+
+    if (!email || !newPassword) {
+      return res
+        .status(400)
+        .json({ error: 'Email and newPassword are required' });
+    }
+
+    const user = await Employee.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ error: 'No user found for that email' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    user.passwordHash = passwordHash;
+    await user.save();
+
+    return res.json({
+      message: 'Password updated successfully',
+      role: user.role || 'employee',
+    });
+  } catch (err) {
+    console.error('reset-password error:', err);
+    return res.status(500).json({ error: err.message || 'Reset failed' });
+  }
+});
 
 module.exports = router;
