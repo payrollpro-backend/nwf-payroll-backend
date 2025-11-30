@@ -1,10 +1,13 @@
 // src/routes/payroll.js
 
+
 const express = require('express');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 const { calculatePaycheck } = require('../payrollEngine');
+const { computeTaxesForPaycheck } = require('../services/taxCalculator');
+
 
 const router = express.Router();
 
