@@ -1,128 +1,277 @@
 // src/routes/employees.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const Employee = require('../models/Employee');
-
 const router = express.Router();
 
+const Employee = require('../models/Employee');
+const Employer = require('../models/Employer');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
+const { sendWelcomeEmail } = require('../utils/email');
+
 /**
- * Generate a random temp password so we can set passwordHash
- * (employees don't have to log in yet, but the schema expects a hash).
+ * Utility: build a safe JSON view of an employee
  */
-function generateTempPassword(len = 10) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
-  let out = '';
-  for (let i = 0; i < len; i++) {
-    out += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return out;
+function serializeEmployee(emp) {
+  return {
+    _id: emp._id,
+    employer: emp.employer,
+    firstName: emp.firstName,
+    lastName: emp.lastName,
+    email: emp.email,
+    phone: emp.phone || '',
+    role: emp.role,
+    externalEmployeeId: emp.externalEmployeeId || '',
+    companyName: emp.companyName || '',
+    address: emp.address || {},
+    payMethod: emp.payMethod,
+    directDeposit: emp.directDeposit || {},
+    payType: emp.payType,
+    hourlyRate: emp.hourlyRate,
+    salaryAmount: emp.salaryAmount,
+    payFrequency: emp.payFrequency,
+    hireDate: emp.hireDate,
+    startDate: emp.startDate,
+    status: emp.status,
+    filingStatus: emp.filingStatus,
+    federalWithholdingRate: emp.federalWithholdingRate,
+    stateWithholdingRate: emp.stateWithholdingRate,
+    federalAllowances: emp.federalAllowances,
+    stateAllowances: emp.stateAllowances,
+    extraFederalWithholding: emp.extraFederalWithholding,
+    extraStateWithholding: emp.extraStateWithholding,
+    stateCode: emp.stateCode || '',
+    createdAt: emp.createdAt,
+    updatedAt: emp.updatedAt,
+  };
 }
 
 /**
- * External Employee ID format:
- *   Emp_ID_938203948
+ * GET /api/employees
+ * Admin only – list all employees
  */
-function generateExternalEmployeeId() {
-  const num = Math.floor(100000000 + Math.random() * 900000000); // 9 digits
-  return `Emp_ID_${num}`;
-}
-
-/**
- * POST /api/employees
- * Create a new employee (used by admin create-employee.html)
- */
-router.post('/', async (req, res) => {
+router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      companyName,
-      hourlyRate,
-      address = {},
-      dob,
-      ssnLast4,
-      payMethod,
-      directDeposit = {},
-    } = req.body || {};
-
-    if (!firstName || !lastName || !email || !companyName) {
-      return res.status(400).json({
-        error: 'firstName, lastName, email, and companyName are required',
-      });
-    }
-
-    if (!hourlyRate || isNaN(hourlyRate)) {
-      return res.status(400).json({
-        error: 'hourlyRate must be a valid number',
-      });
-    }
-
-    // Basic uniqueness check on email
-    const existing = await Employee.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ error: 'An employee with this email already exists' });
-    }
-
-    // Create password hash (even if employees never log in directly yet)
-    const tempPassword = generateTempPassword();
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-    const externalEmployeeId = generateExternalEmployeeId();
-
-    const employee = await Employee.create({
-      firstName,
-      lastName,
-      email,
-      companyName,
-      hourlyRate,
-      role: 'employee',
-      externalEmployeeId,
-
-      address: {
-        line1: address.line1 || '',
-        line2: address.line2 || '',
-        city: address.city || '',
-        state: address.state || '',
-        zip: address.zip || '',
-      },
-
-      dob: dob || null,
-      ssnLast4: ssnLast4 || '',
-
-      payMethod: payMethod || 'direct_deposit',
-      directDeposit: {
-        bankName: directDeposit.bankName || '',
-        accountType: directDeposit.accountType || '',
-        routingNumber: directDeposit.routingNumber || '',
-        accountNumber: directDeposit.accountNumber || '',
-      },
-
-      passwordHash,
-    });
-
-    // Do NOT send password or passwordHash back
-    const safe = employee.toObject();
-    delete safe.passwordHash;
-
-    res.status(201).json(safe);
+    const employees = await Employee.find().sort({ createdAt: -1 }).lean();
+    res.json(employees.map(serializeEmployee));
   } catch (err) {
-    console.error('Create employee error:', err);
-    res.status(500).json({ error: err.message || 'Failed to create employee' });
+    console.error('GET /api/employees error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
 /**
- * GET /api/employees
- * Return all employees (for admin pages, run-payroll, etc.)
+ * GET /api/employees/:id
+ * Admin can view any; employees can view themselves.
  */
-router.get('/', async (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const employees = await Employee.find().sort({ createdAt: -1 }).lean();
-    res.json(employees);
+    const emp = await Employee.findById(req.params.id).lean();
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // If not admin, they must be this employee
+    if (req.user.role !== 'admin' && req.user.id !== String(emp._id)) {
+      return res
+        .status(403)
+        .json({ error: 'Not allowed to view this employee' });
+    }
+
+    res.json(serializeEmployee(emp));
   } catch (err) {
-    console.error('List employees error:', err);
-    res.status(500).json({ error: err.message || 'Failed to load employees' });
+    console.error('GET /api/employees/:id error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/employees
+ * Admin-only create employee (for now).
+ * Generates a temp password & emails it if possible.
+ */
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const {
+      employerId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      companyName,
+      address,
+      payMethod,
+      directDeposit,
+      payType,
+      hourlyRate,
+      salaryAmount,
+      payFrequency,
+      hireDate,
+      startDate,
+      status,
+      filingStatus,
+      federalWithholdingRate,
+      stateWithholdingRate,
+      federalAllowances,
+      stateAllowances,
+      extraFederalWithholding,
+      extraStateWithholding,
+      stateCode,
+    } = req.body || {};
+
+    if (!firstName || !lastName || !email) {
+      return res.status(400).json({ error: 'firstName, lastName, email required' });
+    }
+
+    const existing = await Employee.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ error: 'Employee with this email already exists' });
+    }
+
+    let employer = null;
+    if (employerId) {
+      employer = await Employer.findById(employerId);
+      if (!employer) {
+        return res.status(400).json({ error: 'Invalid employerId' });
+      }
+    }
+
+    // temp password
+    const tempPassword = Math.random().toString(36).slice(-10);
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    const newEmp = await Employee.create({
+      employer: employer ? employer._id : null,
+      firstName,
+      lastName,
+      email,
+      phone: phone || '',
+      role: 'employee',
+      externalEmployeeId: '', // can be set later or generated
+      companyName: companyName || '',
+      address: {
+        line1: address?.line1 || '',
+        line2: address?.line2 || '',
+        city: address?.city || '',
+        state: address?.state || '',
+        zip: address?.zip || '',
+      },
+      payMethod: payMethod || 'direct_deposit',
+      directDeposit: {
+        accountType: directDeposit?.accountType || '',
+        bankName: directDeposit?.bankName || '',
+        routingNumber: directDeposit?.routingNumber || '',
+        accountNumberLast4: directDeposit?.accountNumberLast4 || '',
+      },
+      payType: payType || 'hourly',
+      hourlyRate: typeof hourlyRate === 'number' ? hourlyRate : 0,
+      salaryAmount: typeof salaryAmount === 'number' ? salaryAmount : 0,
+      payFrequency: payFrequency || 'biweekly',
+      hireDate: hireDate ? new Date(hireDate) : Date.now(),
+      startDate: startDate ? new Date(startDate) : Date.now(),
+      status: status || 'active',
+      filingStatus: filingStatus || 'single',
+      federalWithholdingRate:
+        typeof federalWithholdingRate === 'number' ? federalWithholdingRate : 0,
+      stateWithholdingRate:
+        typeof stateWithholdingRate === 'number' ? stateWithholdingRate : 0,
+      federalAllowances:
+        typeof federalAllowances === 'number' ? federalAllowances : 0,
+      stateAllowances:
+        typeof stateAllowances === 'number' ? stateAllowances : 0,
+      extraFederalWithholding:
+        typeof extraFederalWithholding === 'number' ? extraFederalWithholding : 0,
+      extraStateWithholding:
+        typeof extraStateWithholding === 'number' ? extraStateWithholding : 0,
+      stateCode: stateCode || '',
+      passwordHash,
+    });
+
+    // optional email
+    try {
+      await sendWelcomeEmail(
+        newEmp.email,
+        tempPassword,
+        process.env.EMPLOYEE_PORTAL_URL || 'https://www.nwfpayroll.com/employee/'
+      );
+    } catch (emailErr) {
+      console.error('sendWelcomeEmail failed (non-fatal):', emailErr);
+    }
+
+    res.status(201).json({ employee: serializeEmployee(newEmp) });
+  } catch (err) {
+    console.error('POST /api/employees error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/employees/:id
+ * Admin-only update (for now).
+ */
+router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const b = req.body || {};
+
+    if (b.firstName !== undefined) emp.firstName = b.firstName;
+    if (b.lastName !== undefined) emp.lastName = b.lastName;
+    if (b.email !== undefined) emp.email = b.email;
+    if (b.phone !== undefined) emp.phone = b.phone;
+    if (b.companyName !== undefined) emp.companyName = b.companyName;
+
+    if (b.address) {
+      emp.address = {
+        line1: b.address.line1 || '',
+        line2: b.address.line2 || '',
+        city: b.address.city || '',
+        state: b.address.state || '',
+        zip: b.address.zip || '',
+      };
+    }
+
+    if (b.payMethod !== undefined) emp.payMethod = b.payMethod;
+    if (b.directDeposit) {
+      emp.directDeposit = {
+        accountType: b.directDeposit.accountType || '',
+        bankName: b.directDeposit.bankName || '',
+        routingNumber: b.directDeposit.routingNumber || '',
+        accountNumberLast4: b.directDeposit.accountNumberLast4 || '',
+      };
+    }
+
+    if (b.payType !== undefined) emp.payType = b.payType;
+    if (b.hourlyRate !== undefined) emp.hourlyRate = b.hourlyRate;
+    if (b.salaryAmount !== undefined) emp.salaryAmount = b.salaryAmount;
+    if (b.payFrequency !== undefined) emp.payFrequency = b.payFrequency;
+
+    if (b.hireDate !== undefined) emp.hireDate = b.hireDate ? new Date(b.hireDate) : emp.hireDate;
+    if (b.startDate !== undefined) emp.startDate = b.startDate ? new Date(b.startDate) : emp.startDate;
+    if (b.status !== undefined) emp.status = b.status;
+
+    if (b.filingStatus !== undefined) emp.filingStatus = b.filingStatus;
+    if (b.federalWithholdingRate !== undefined)
+      emp.federalWithholdingRate = b.federalWithholdingRate;
+    if (b.stateWithholdingRate !== undefined)
+      emp.stateWithholdingRate = b.stateWithholdingRate;
+    if (b.federalAllowances !== undefined)
+      emp.federalAllowances = b.federalAllowances;
+    if (b.stateAllowances !== undefined)
+      emp.stateAllowances = b.stateAllowances;
+    if (b.extraFederalWithholding !== undefined)
+      emp.extraFederalWithholding = b.extraFederalWithholding;
+    if (b.extraStateWithholding !== undefined)
+      emp.extraStateWithholding = b.extraStateWithholding;
+    if (b.stateCode !== undefined) emp.stateCode = b.stateCode;
+
+    await emp.save();
+    res.json({ employee: serializeEmployee(emp) });
+  } catch (err) {
+    console.error('PATCH /api/employees/:id error:', err);
+    res.status(400).json({ error: err.message });
   }
 });
 
