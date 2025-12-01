@@ -1,6 +1,7 @@
 // src/routes/employers.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
@@ -8,6 +9,24 @@ const Paystub = require('../models/Paystub');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Same secret as auth.js
+const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
+
+/**
+ * Sign a JWT for an employer user
+ */
+function signToken(user) {
+  return jwt.sign(
+    {
+      id: user._id.toString(),
+      role: user.role,
+      employerId: user._id.toString(),
+    },
+    JWT_SECRET,
+    { expiresIn: '7d' }
+  );
+}
 
 /**
  * Helper: make sure the current user is an employer (or admin).
@@ -32,79 +51,64 @@ function generateExternalEmployeeId() {
   return `EMP_${rand}`;
 }
 
-// 🔐 All routes in here require auth
-router.use(requireAuth);
-
 /**
- * 🔹 ADMIN: Create an employer account
+ * PUBLIC: POST /api/employers/register
+ * Employer self-signup (used by employer-register.html).
  *
- * POST /api/employers
- * Body (JSON):
- *  {
- *    "companyName": "NWF Payroll Services",
- *    "firstName": "John",
- *    "lastName": "Owner",
- *    "email": "owner@example.com",
- *    "phone": "555-555-5555",
- *    "addressLine1": "...",
- *    "addressLine2": "...",
- *    "city": "...",
- *    "state": "...",
- *    "zip": "...",
- *    // optional: "password": "SomeStrongPass123!"
- *  }
- *
- * Returns:
- *  { employer, tempPassword }  // tempPassword only returned if we generated one
+ * Body fields expected from the form:
+ * - firstName, lastName, email, password, confirmPassword
+ * - companyName, phone, ein
+ * - addressLine1, addressLine2, city, state, zip
  */
-router.post('/', async (req, res) => {
+router.post('/register', async (req, res) => {
   try {
-    // Must be logged in as ADMIN to create employers
-    if (!req.user || req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Admin access required to create employers' });
-    }
-
     const {
-      companyName,
       firstName,
       lastName,
       email,
+      password,
+      confirmPassword,
+      companyName,
       phone,
+      ein,
       addressLine1,
       addressLine2,
       city,
       state,
       zip,
-      password, // optional – if not provided, we auto-generate
     } = req.body || {};
 
-    if (!companyName || !firstName || !lastName || !email) {
+    if (!firstName || !lastName || !email || !password) {
       return res.status(400).json({
-        error: 'companyName, firstName, lastName, and email are required',
+        error: 'firstName, lastName, email, and password are required',
       });
     }
 
-    // Check if this email already exists in Employee collection
+    if (confirmPassword && password !== confirmPassword) {
+      return res.status(400).json({ error: 'Passwords do not match' });
+    }
+
     const existing = await Employee.findOne({ email });
     if (existing) {
-      return res.status(400).json({ error: 'Email is already in use' });
+      return res.status(400).json({ error: 'Email already in use' });
     }
 
-    // Decide on a password: use provided or auto-generate a temp one
-    let tempPassword = password;
-    if (!tempPassword || tempPassword.length < 8) {
-      tempPassword = Math.random().toString(36).slice(2, 8) + '!Aa1';
-    }
+    const passwordHash = await bcrypt.hash(password, 10);
 
-    const passwordHash = await bcrypt.hash(tempPassword, 10);
-
-    const employerUser = await Employee.create({
+    // Create the employer as a special Employee record with role="employer"
+    const employer = await Employee.create({
       role: 'employer',
-      companyName: companyName || '',
+
       firstName,
       lastName,
       email,
       phone: phone || '',
+
+      companyName: companyName || '',
+
+      // If you added ein to EmployeeSchema, it will be saved; otherwise Mongoose ignores it.
+      ein: ein || '',
+
       address: {
         line1: addressLine1 || '',
         line2: addressLine2 || '',
@@ -112,24 +116,40 @@ router.post('/', async (req, res) => {
         state: state || '',
         zip: zip || '',
       },
+
+      // Default payroll config (can be edited later)
+      payType: 'hourly',
+      hourlyRate: 0,
+      salaryAmount: 0,
+      payFrequency: 'biweekly',
+
+      federalWithholdingRate: 0,
+      stateWithholdingRate: 0,
+
       passwordHash,
     });
 
+    const token = signToken(employer);
+
     return res.status(201).json({
-      employer: {
-        id: employerUser._id,
-        companyName: employerUser.companyName,
-        firstName: employerUser.firstName,
-        lastName: employerUser.lastName,
-        email: employerUser.email,
+      token,
+      user: {
+        id: employer._id,
+        firstName: employer.firstName,
+        lastName: employer.lastName,
+        email: employer.email,
+        role: employer.role,
+        employerId: employer._id,
       },
-      tempPassword, // show this in the admin UI so they can give it to the employer
     });
   } catch (err) {
-    console.error('POST /api/employers (admin create) error:', err);
-    return res.status(500).json({ error: err.message || 'Failed to create employer' });
+    console.error('POST /api/employers/register error:', err);
+    res.status(500).json({ error: err.message || 'Employer registration failed' });
   }
 });
+
+// ⬇️ Everything below this line REQUIRES auth (employer or admin)
+router.use(requireAuth);
 
 /**
  * GET /api/employers/me
@@ -221,8 +241,7 @@ router.post('/me/employees', async (req, res) => {
     const externalEmployeeId = generateExternalEmployeeId();
 
     // Temporary password for the employee (can be shown to employer)
-    const tempPassword =
-      Math.random().toString(36).slice(2, 8) + '!Aa1';
+    const tempPassword = Math.random().toString(36).slice(2, 8) + '!Aa1';
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
     const employee = await Employee.create({
