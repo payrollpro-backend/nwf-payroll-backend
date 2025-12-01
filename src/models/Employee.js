@@ -4,14 +4,17 @@ const { Schema } = mongoose;
 
 const EmployeeSchema = new Schema(
   {
+    // Link to employer (company)
     employer: { type: Schema.Types.ObjectId, ref: 'Employer', default: null },
 
+    // Basic identity
     firstName: { type: String, required: true },
     lastName: { type: String, required: true },
 
     email: { type: String, required: true, unique: true },
     phone: { type: String, default: '' },
 
+    // Auth
     passwordHash: { type: String },
     role: {
       type: String,
@@ -22,8 +25,10 @@ const EmployeeSchema = new Schema(
     // External / display employee ID like Emp_ID_XXXXXXXXX
     externalEmployeeId: { type: String, default: '' },
 
+    // Optional “company name” on employee row (for sole props, etc.)
     companyName: { type: String, default: '' },
 
+    // Mailing address
     address: {
       line1: { type: String, default: '' },
       line2: { type: String, default: '' },
@@ -32,23 +37,23 @@ const EmployeeSchema = new Schema(
       zip: { type: String, default: '' },
     },
 
+    // How they get paid out
     payMethod: {
       type: String,
       enum: ['direct_deposit', 'check'],
       default: 'direct_deposit',
     },
 
+    // Direct deposit info (we only store last4 of account)
     directDeposit: {
       accountType: { type: String, default: '' }, // checking / savings
       bankName: { type: String, default: '' },
       routingNumber: { type: String, default: '' },
-      accountNumberLast4: { type: String, default: '' }, // store last 4 only
+      accountNumberLast4: { type: String, default: '' },
     },
 
     /**
      * Pay configuration
-     * - payType: hourly vs salary
-     * - payFrequency: weekly, biweekly, semimonthly, monthly
      */
     payType: {
       type: String,
@@ -56,61 +61,64 @@ const EmployeeSchema = new Schema(
       default: 'hourly',
     },
 
-    hourlyRate: { type: Number, default: 0 },   // used when payType = 'hourly'
-    salaryAmount: { type: Number, default: 0 }, // annual salary when payType = 'salary'
+    // used when payType = 'hourly'
+    hourlyRate: { type: Number, default: 0 },
+
+    // annual salary when payType = 'salary'
+    salaryAmount: { type: Number, default: 0 },
 
     payFrequency: {
       type: String,
       enum: ['weekly', 'biweekly', 'semimonthly', 'monthly'],
       default: 'biweekly',
     },
-        payFrequency: {
-      type: String,
-      enum: ['weekly', 'biweekly', 'semimonthly', 'monthly'],
-      default: 'biweekly',
-    },
 
-    // 🔹 Filing status used by tax engine
-    filingStatus: {
-      type: String,
-      enum: ['single', 'married', 'head_of_household'],
-      default: 'single',
-    },
-
-
-    // Hire date used for YTD context (earlier than this is effectively 0)
+    // Hire date used for YTD context
     hireDate: {
       type: Date,
       default: Date.now,
     },
 
-    // start date (front-end "startDate" field)
+    // Optional “start working this job” date (front-end: startDate)
     startDate: {
       type: Date,
       default: Date.now,
     },
 
-    // active / inactive status
+    // active / inactive
     status: {
       type: String,
       enum: ['active', 'inactive'],
       default: 'active',
     },
 
-    // optional stored “default” tax settings for employee
-    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 for 18%
-    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05
+    /**
+     * Tax configuration / W-4-style fields
+     */
+
+    // Filing status for federal & state withholding
+    filingStatus: {
+      type: String,
+      enum: ['single', 'married', 'head_of_household'],
+      default: 'single',
+    },
+
+    // Optional flat “percent of gross” overrides (0 = use default logic)
+    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 = 18%
+    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05 = 5%
+
+    // Allowances / dependents counts (can be used later for a richer engine)
+    federalAllowances: { type: Number, default: 0 },
+    stateAllowances: { type: Number, default: 0 },
+
+    // Extra dollar amounts to withhold each paycheck
+    extraFederalWithholding: { type: Number, default: 0 },
+    extraStateWithholding: { type: Number, default: 0 },
+
+    // Optional state code shortcut (if not using address.state)
+    stateCode: { type: String, default: '' },
   },
   { timestamps: true }
 );
-
-// 🔹 Auto-generate a unique externalEmployeeId if empty
-EmployeeSchema.pre('save', function (next) {
-  if (!this.externalEmployeeId) {
-    const random = Math.floor(100000000 + Math.random() * 900000000); // 9-digit number
-    this.externalEmployeeId = `Emp_ID_${random}`;
-  }
-  next();
-});
 
 module.exports = mongoose.model('Employee', EmployeeSchema);
