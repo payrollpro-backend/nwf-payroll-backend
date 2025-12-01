@@ -10,14 +10,14 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
 /**
- * Sign a JWT for a user/admin
+ * Sign a JWT for a user/admin/employer
  */
 function signToken(user) {
   return jwt.sign(
     {
       id: user._id.toString(),
       role: user.role,
-      employerId: user.employer ? user.employer.toString() : null,
+      employer: user.employer ? user.employer.toString() : null,
     },
     JWT_SECRET,
     { expiresIn: '7d' }
@@ -62,6 +62,7 @@ router.post('/admin-register', async (req, res) => {
         lastName: admin.lastName,
         email: admin.email,
         role: admin.role,
+        employer: admin.employer || null,
       },
     });
   } catch (err) {
@@ -78,25 +79,22 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
 
-    // 1) Check body
     if (!email || !password) {
       return res
         .status(400)
         .json({ error: 'Missing email or password', body: req.body });
     }
 
-    // 2) Find user
     let user = await Employee.findOne({ email });
     if (!user) {
       return res.status(400).json({ error: 'User not found for this email' });
     }
 
-    // 3) If no passwordHash yet, set it now and log them in
+    // First-time login: set password
     if (!user.passwordHash) {
       const passwordHash = await bcrypt.hash(password, 10);
       user.passwordHash = passwordHash;
 
-      // If this is your admin email, ensure role is admin
       if (!user.role) {
         user.role = 'admin';
       }
@@ -112,12 +110,11 @@ router.post('/login', async (req, res) => {
           lastName: user.lastName,
           email: user.email,
           role: user.role,
-          employerId: user.employer || null,
+          employer: user.employer || null,
         },
       });
     }
 
-    // 4) If passwordHash exists, validate password normally
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) {
       return res.status(400).json({ error: 'Invalid password' });
@@ -133,7 +130,7 @@ router.post('/login', async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
-        employerId: user.employer || null,
+        employer: user.employer || null,
       },
     });
   } catch (err) {
@@ -143,88 +140,7 @@ router.post('/login', async (req, res) => {
 });
 
 /**
- * Employer-only login wrapper
- * POST /api/auth/employer/login
- * - Same behavior as /login, but enforces role === 'employer'
- */
-router.post('/employer/login', async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-
-    if (!email || !password) {
-      return res
-        .status(400)
-        .json({ error: 'Missing email or password', body: req.body });
-    }
-
-    // Look up the user by email
-    let user = await Employee.findOne({ email });
-    if (!user) {
-      return res.status(400).json({ error: 'User not found for this email' });
-    }
-
-    // Must be an employer account
-    if (user.role !== 'employer') {
-      return res
-        .status(403)
-        .json({ error: 'This account is not set up as an employer' });
-    }
-
-    // First-time login: set password if none exists yet
-    if (!user.passwordHash) {
-      const passwordHash = await bcrypt.hash(password, 10);
-      user.passwordHash = passwordHash;
-
-      // safety: make sure role is employer
-      if (!user.role) {
-        user.role = 'employer';
-      }
-
-      await user.save();
-
-      const token = signToken(user);
-      return res.json({
-        token,
-        user: {
-          id: user._id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          email: user.email,
-          role: user.role,
-          employerId: user.employer || null,
-        },
-      });
-    }
-
-    // Normal password check
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) {
-      return res.status(400).json({ error: 'Invalid password' });
-    }
-
-    const token = signToken(user);
-
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        email: user.email,
-        role: user.role,
-        employerId: user.employer || null,
-      },
-    });
-  } catch (err) {
-    console.error('employer/login error:', err);
-    res
-      .status(400)
-      .json({ error: err.message || 'Employer login failed' });
-  }
-});
-
-/**
- * Admin password reset helper
+ * Admin password reset helper (backend tool)
  * - If user does not exist: create them as ADMIN and set password
  * - If user exists: force role=admin and update password
  */
@@ -241,7 +157,6 @@ router.patch('/admin-reset-password', async (req, res) => {
     let admin = await Employee.findOne({ email });
 
     if (!admin) {
-      // Create new admin
       const passwordHash = await bcrypt.hash(newPassword, 10);
       admin = await Employee.create({
         firstName: 'NWF',
@@ -254,7 +169,6 @@ router.patch('/admin-reset-password', async (req, res) => {
       return res.json({ message: 'Admin created & password set' });
     }
 
-    // Force this user to be admin and reset password
     admin.role = 'admin';
     admin.passwordHash = await bcrypt.hash(newPassword, 10);
     await admin.save();
@@ -265,15 +179,14 @@ router.patch('/admin-reset-password', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 /**
- * Generic password reset for any role (admin/employer/employee)
- * This is intended for OWNER/ADMIN use via API tool (Postman, etc).
- * It does NOT change the user's role – only updates passwordHash.
+ * Generic reset-password endpoint (for employer / employee portals)
+ * Body: { email, newPassword }
  */
-router.patch('/reset-password', async (req, res) => {
+router.post('/reset-password', async (req, res) => {
   try {
     const { email, newPassword } = req.body || {};
-
     if (!email || !newPassword) {
       return res
         .status(400)
@@ -282,20 +195,16 @@ router.patch('/reset-password', async (req, res) => {
 
     const user = await Employee.findOne({ email });
     if (!user) {
-      return res.status(404).json({ error: 'No user found for that email' });
+      return res.status(404).json({ error: 'User not found for that email' });
     }
 
-    const passwordHash = await bcrypt.hash(newPassword, 10);
-    user.passwordHash = passwordHash;
+    user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    return res.json({
-      message: 'Password updated successfully',
-      role: user.role || 'employee',
-    });
+    res.json({ message: 'Password updated successfully' });
   } catch (err) {
     console.error('reset-password error:', err);
-    return res.status(500).json({ error: err.message || 'Reset failed' });
+    res.status(500).json({ error: err.message });
   }
 });
 
