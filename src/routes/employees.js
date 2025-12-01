@@ -5,8 +5,16 @@ const router = express.Router();
 
 const Employee = require('../models/Employee');
 const Employer = require('../models/Employer');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { sendWelcomeEmail } = require('../utils/email');
+const { requireAuth } = require('../middleware/auth'); // <- only this
+
+// Local admin-only middleware
+function requireAdmin(req, res, next) {
+  // requireAuth must run before this, so req.user should be set
+  if (!req.user || req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin role required' });
+  }
+  next();
+}
 
 /**
  * Utility: build a safe JSON view of an employee
@@ -87,7 +95,6 @@ router.get('/:id', requireAuth, async (req, res) => {
 /**
  * POST /api/employees
  * Admin-only create employee (for now).
- * Generates a temp password & emails it if possible.
  */
 router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -119,12 +126,16 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
     } = req.body || {};
 
     if (!firstName || !lastName || !email) {
-      return res.status(400).json({ error: 'firstName, lastName, email required' });
+      return res.status(400).json({
+        error: 'firstName, lastName, email required',
+      });
     }
 
     const existing = await Employee.findOne({ email });
     if (existing) {
-      return res.status(400).json({ error: 'Employee with this email already exists' });
+      return res
+        .status(400)
+        .json({ error: 'Employee with this email already exists' });
     }
 
     let employer = null;
@@ -179,23 +190,19 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       stateAllowances:
         typeof stateAllowances === 'number' ? stateAllowances : 0,
       extraFederalWithholding:
-        typeof extraFederalWithholding === 'number' ? extraFederalWithholding : 0,
+        typeof extraFederalWithholding === 'number'
+          ? extraFederalWithholding
+          : 0,
       extraStateWithholding:
-        typeof extraStateWithholding === 'number' ? extraStateWithholding : 0,
+        typeof extraStateWithholding === 'number'
+          ? extraStateWithholding
+          : 0,
       stateCode: stateCode || '',
       passwordHash,
     });
 
-    // optional email
-    try {
-      await sendWelcomeEmail(
-        newEmp.email,
-        tempPassword,
-        process.env.EMPLOYEE_PORTAL_URL || 'https://www.nwfpayroll.com/employee/'
-      );
-    } catch (emailErr) {
-      console.error('sendWelcomeEmail failed (non-fatal):', emailErr);
-    }
+    // optional: you can wire up an email sender here later
+    // sendWelcomeEmail(newEmp.email, tempPassword, ...)
 
     res.status(201).json({ employee: serializeEmployee(newEmp) });
   } catch (err) {
@@ -248,8 +255,10 @@ router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
     if (b.salaryAmount !== undefined) emp.salaryAmount = b.salaryAmount;
     if (b.payFrequency !== undefined) emp.payFrequency = b.payFrequency;
 
-    if (b.hireDate !== undefined) emp.hireDate = b.hireDate ? new Date(b.hireDate) : emp.hireDate;
-    if (b.startDate !== undefined) emp.startDate = b.startDate ? new Date(b.startDate) : emp.startDate;
+    if (b.hireDate !== undefined)
+      emp.hireDate = b.hireDate ? new Date(b.hireDate) : emp.hireDate;
+    if (b.startDate !== undefined)
+      emp.startDate = b.startDate ? new Date(b.startDate) : emp.startDate;
     if (b.status !== undefined) emp.status = b.status;
 
     if (b.filingStatus !== undefined) emp.filingStatus = b.filingStatus;
