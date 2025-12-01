@@ -1,233 +1,240 @@
 // src/routes/employers.js
 const express = require('express');
-const router = express.Router();
+const bcrypt = require('bcryptjs');
 
-const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 const { requireAuth } = require('../middleware/auth');
 
+const router = express.Router();
+
 /**
- * Helper: ensure current user is an employer (or admin).
+ * Helper: make sure the current user is an employer (or admin).
  */
-function assertEmployerOrAdmin(req, res) {
+function ensureEmployer(req, res) {
   if (!req.user) {
     res.status(401).json({ error: 'Not authenticated' });
-    return false;
+    return null;
   }
   if (req.user.role !== 'employer' && req.user.role !== 'admin') {
-    res.status(403).json({ error: 'Employer or admin role required' });
-    return false;
+    res.status(403).json({ error: 'Employer access required' });
+    return null;
   }
-  return true;
+  return req.user;
 }
 
 /**
- * Resolve employerId for “me”
- * - If employer user: use req.user.employer
- * - If admin & query.employerId is provided: use that
+ * Helper: generate a display employee ID like EMP_XXXXXXX
  */
-function resolveEmployerId(req) {
-  if (!req.user) return null;
-
-  if (req.user.role === 'employer' && req.user.employer) {
-    return req.user.employer;
-  }
-
-  if (req.user.role === 'admin' && req.query && req.query.employerId) {
-    return req.query.employerId;
-  }
-
-  return null;
+function generateExternalEmployeeId() {
+  const rand = Math.random().toString(36).slice(2, 10).toUpperCase();
+  return `EMP_${rand}`;
 }
+
+// All routes in here require auth
+router.use(requireAuth);
 
 /**
  * GET /api/employers/me
- * Return the employer profile for the current employer.
+ * Return employer profile info (based on the logged-in user document).
  */
-router.get('/me', requireAuth, async (req, res) => {
-  if (!assertEmployerOrAdmin(req, res)) return;
+router.get('/me', async (req, res) => {
+  const employerUser = ensureEmployer(req, res);
+  if (!employerUser) return;
 
-  const employerId = resolveEmployerId(req);
-  if (!employerId) {
-    return res.status(400).json({
-      error:
-        'No employer associated with this account. Ask support to link your employer profile.',
-    });
-  }
+  const addr = employerUser.address || {};
+
+  res.json({
+    id: employerUser._id,
+    companyName: employerUser.companyName || '',
+    contactEmail: employerUser.email || '',
+    contactName: `${employerUser.firstName || ''} ${employerUser.lastName || ''}`.trim(),
+    addressLine1: addr.line1 || '',
+    addressLine2: addr.line2 || '',
+    city: addr.city || '',
+    state: addr.state || '',
+    zip: addr.zip || '',
+  });
+});
+
+/**
+ * GET /api/employers/me/employees
+ * List employees that belong to this employer.
+ */
+router.get('/me/employees', async (req, res) => {
+  const employerUser = ensureEmployer(req, res);
+  if (!employerUser) return;
+
+  const employerId = employerUser._id;
 
   try {
-    const employer = await Employer.findById(employerId).lean();
-    if (!employer) {
-      return res
-        .status(404)
-        .json({ error: 'Employer profile not found for this account' });
-    }
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json({
-      id: employer._id,
-      companyName: employer.companyName,
-      legalName: employer.legalName,
-      ein: employer.ein,
-      contactName: employer.contactName,
-      contactEmail: employer.contactEmail,
-      phone: employer.phone,
-      addressLine1: employer.addressLine1,
-      addressLine2: employer.addressLine2,
-      city: employer.city,
-      state: employer.state,
-      zip: employer.zip,
-      createdAt: employer.createdAt,
-      updatedAt: employer.updatedAt,
-    });
+    res.json(employees);
   } catch (err) {
-    console.error('GET /api/employers/me error:', err);
+    console.error('GET /me/employees error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /**
- * GET /api/employers/me/employees
- * List employees for this employer.
+ * POST /api/employers/me/employees
+ * Create a new employee under this employer.
+ * This is the route your frontend is calling.
  */
-router.get('/me/employees', requireAuth, async (req, res) => {
-  if (!assertEmployerOrAdmin(req, res)) return;
+router.post('/me/employees', async (req, res) => {
+  const employerUser = ensureEmployer(req, res);
+  if (!employerUser) return;
 
-  const employerId = resolveEmployerId(req);
-  if (!employerId) {
+  const employerId = employerUser._id;
+  const {
+    firstName,
+    lastName,
+    email,
+    phone,
+    addressLine1,
+    addressLine2,
+    city,
+    state,
+    zip,
+    payType,
+    hourlyRate,
+    salaryAmount,
+    payFrequency,
+    federalWithholdingRate,
+    stateWithholdingRate,
+  } = req.body || {};
+
+  if (!firstName || !lastName || !email) {
     return res.status(400).json({
-      error:
-        'No employer associated with this account. Ask support to link your employer profile.',
+      error: 'firstName, lastName, and email are required',
     });
   }
 
   try {
-    const employees = await Employee.find({ employer: employerId })
-      .sort({ createdAt: -1 })
-      .lean();
+    const existing = await Employee.findOne({ email });
+    if (existing) {
+      return res.status(400).json({ error: 'Email already in use' });
+    }
 
-    res.json(
-      employees.map((emp) => ({
-        _id: emp._id,
-        firstName: emp.firstName,
-        lastName: emp.lastName,
-        email: emp.email,
-        externalEmployeeId: emp.externalEmployeeId || '',
-        status: emp.status || 'active',
-        createdAt: emp.createdAt,
-      }))
-    );
+    const externalEmployeeId = generateExternalEmployeeId();
+
+    // Temporary password for the employee (can be shown to employer)
+    const tempPassword =
+      Math.random().toString(36).slice(2, 8) + '!Aa1';
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    const employee = await Employee.create({
+      employer: employerId,
+      role: 'employee',
+
+      firstName,
+      lastName,
+      email,
+      phone: phone || '',
+
+      externalEmployeeId,
+
+      address: {
+        line1: addressLine1 || '',
+        line2: addressLine2 || '',
+        city: city || '',
+        state: state || '',
+        zip: zip || '',
+      },
+
+      payType: payType || 'hourly',
+      hourlyRate: typeof hourlyRate === 'number' ? hourlyRate : 0,
+      salaryAmount: typeof salaryAmount === 'number' ? salaryAmount : 0,
+      payFrequency: payFrequency || 'biweekly',
+
+      federalWithholdingRate:
+        typeof federalWithholdingRate === 'number'
+          ? federalWithholdingRate
+          : 0,
+      stateWithholdingRate:
+        typeof stateWithholdingRate === 'number'
+          ? stateWithholdingRate
+          : 0,
+
+      passwordHash,
+    });
+
+    res.status(201).json({
+      employee,
+      tempPassword,
+    });
   } catch (err) {
-    console.error('GET /api/employers/me/employees error:', err);
+    console.error('POST /me/employees error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /**
  * GET /api/employers/me/payroll-runs
- * Recent payroll runs for this employer.
+ * All payroll runs for employees belonging to this employer.
  */
-router.get('/me/payroll-runs', requireAuth, async (req, res) => {
-  if (!assertEmployerOrAdmin(req, res)) return;
+router.get('/me/payroll-runs', async (req, res) => {
+  const employerUser = ensureEmployer(req, res);
+  if (!employerUser) return;
 
-  const employerId = resolveEmployerId(req);
-  if (!employerId) {
-    return res.status(400).json({
-      error:
-        'No employer associated with this account. Ask support to link your employer profile.',
-    });
-  }
+  const employerId = employerUser._id;
 
   try {
     const runs = await PayrollRun.find({ employer: employerId })
       .populate('employee')
       .sort({ payDate: -1, createdAt: -1 })
-      .limit(50)
       .lean();
 
-    res.json(
-      runs.map((run) => ({
-        _id: run._id,
-        label: run.label || '',
-        payDate: run.payDate,
-        createdAt: run.createdAt,
-        status: run.status || 'Completed',
-        grossPay: run.grossPay,
-        netPay: run.netPay,
-        totalTaxes: run.totalTaxes,
-        employee: run.employee
-          ? {
-              _id: run.employee._id,
-              firstName: run.employee.firstName,
-              lastName: run.employee.lastName,
-              externalEmployeeId: run.employee.externalEmployeeId || '',
-            }
-          : null,
-      }))
-    );
+    res.json(runs);
   } catch (err) {
-    console.error('GET /api/employers/me/payroll-runs error:', err);
+    console.error('GET /me/payroll-runs error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /**
  * GET /api/employers/me/paystubs
- * Latest paystubs across employees for this employer.
- * We go through PayrollRun so we can filter by employer.
+ * Paystubs for employees belonging to this employer.
  */
-router.get('/me/paystubs', requireAuth, async (req, res) => {
-  if (!assertEmployerOrAdmin(req, res)) return;
+router.get('/me/paystubs', async (req, res) => {
+  const employerUser = ensureEmployer(req, res);
+  if (!employerUser) return;
 
-  const employerId = resolveEmployerId(req);
-  if (!employerId) {
-    return res.status(400).json({
-      error:
-        'No employer associated with this account. Ask support to link your employer profile.',
-    });
-  }
+  const employerId = employerUser._id;
 
   try {
-    // Find payroll runs for this employer first
-    const runs = await PayrollRun.find({ employer: employerId })
-      .select('_id employee payDate netPay')
-      .sort({ payDate: -1 })
-      .limit(200)
+    // 1) find employees of this employer
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .select('_id')
       .lean();
 
-    const runIds = runs.map((r) => r._id);
-    if (!runIds.length) {
+    const employeeIds = employees.map((e) => e._id);
+
+    if (!employeeIds.length) {
       return res.json([]);
     }
 
-    const paystubs = await Paystub.find({ payrollRun: { $in: runIds } })
+    // 2) find paystubs for those employees
+    const paystubs = await Paystub.find({
+      employee: { $in: employeeIds },
+    })
       .populate('employee')
       .sort({ payDate: -1, createdAt: -1 })
-      .limit(200)
       .lean();
 
-    res.json(
-      paystubs.map((ps) => ({
-        _id: ps._id,
-        payDate: ps.payDate,
-        fileName: ps.fileName,
-        netPay: ps.netPay || null, // in case you later store per-stub net separately
-        ytdGross: ps.ytdGross || 0,
-        ytdNet: ps.ytdNet || 0,
-        ytdTotalTaxes: ps.ytdTotalTaxes || 0,
-        employee: ps.employee
-          ? {
-              _id: ps.employee._id,
-              firstName: ps.employee.firstName,
-              lastName: ps.employee.lastName,
-              externalEmployeeId: ps.employee.externalEmployeeId || '',
-            }
-          : null,
-      }))
-    );
+    res.json(paystubs);
   } catch (err) {
-    console.error('GET /api/employers/me/paystubs error:', err);
+    console.error('GET /me/paystubs error:', err);
     res.status(500).json({ error: err.message });
   }
 });
