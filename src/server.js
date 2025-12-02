@@ -18,6 +18,7 @@ const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         // paystub endpoints
 const adminRoutes = require('./routes/admin');              // 🔹 NEW: admin-only routes
 
+
 const app = express();
 
 // ---------- CORS ----------
@@ -66,6 +67,7 @@ app.use('/api/auth', authRoutes);
 // Admin-only routes: create employers, admin tools
 // e.g. POST /api/admin/employers
 app.use('/api/admin', adminRoutes);
+
 
 // Employer routes (company-level)
 app.use('/api/employers', employerRoutes);      // any existing employer routes
