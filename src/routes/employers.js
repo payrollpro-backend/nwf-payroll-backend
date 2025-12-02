@@ -51,14 +51,13 @@ function generateExternalEmployeeId() {
   return `EMP_${rand}`;
 }
 
+// src/routes/employers.js
+
+// ... keep your existing imports and setup at the top ...
+
 /**
  * PUBLIC: POST /api/employers/register
- * Employer self-signup (used by employer-register.html).
- *
- * Body fields expected from the form:
- * - firstName, lastName, email, password, confirmPassword
- * - companyName, phone, ein
- * - addressLine1, addressLine2, city, state, zip
+ * Employer self-signup
  */
 router.post('/register', async (req, res) => {
   try {
@@ -94,10 +93,16 @@ router.post('/register', async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    
+    // ⬇️ NEW: Generate a unique ID so it doesn't clash with the default employer
+    const externalEmployeeId = generateExternalEmployeeId(); 
 
     // Create the employer as a special Employee record with role="employer"
     const employer = await Employee.create({
       role: 'employer',
+      
+      // ⬇️ NEW: Save the generated ID
+      externalEmployeeId, 
 
       firstName,
       lastName,
@@ -105,8 +110,6 @@ router.post('/register', async (req, res) => {
       phone: phone || '',
 
       companyName: companyName || '',
-
-      // If you added ein to EmployeeSchema, it will be saved; otherwise Mongoose ignores it.
       ein: ein || '',
 
       address: {
@@ -117,12 +120,10 @@ router.post('/register', async (req, res) => {
         zip: zip || '',
       },
 
-      // Default payroll config (can be edited later)
       payType: 'hourly',
       hourlyRate: 0,
       salaryAmount: 0,
       payFrequency: 'biweekly',
-
       federalWithholdingRate: 0,
       stateWithholdingRate: 0,
 
@@ -144,10 +145,15 @@ router.post('/register', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/employers/register error:', err);
+    
+    // Friendly error for duplicates
+    if (err.code === 11000) {
+        return res.status(400).json({ error: 'This email or ID is already registered.' });
+    }
+
     res.status(500).json({ error: err.message || 'Employer registration failed' });
   }
 });
-
 // ⬇️ Everything below this line REQUIRES auth (employer or admin)
 router.use(requireAuth);
 
