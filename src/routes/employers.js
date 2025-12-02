@@ -1,12 +1,12 @@
-// src/routes/employers.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const Employee = require('../models/Employee'); // We store Employers in the Employee collection
+const Employee = require('../models/Employee'); 
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 const { requireAuth } = require('../middleware/auth');
+const klaviyoService = require('../services/klaviyoService'); // ✅ Import the Service
 
 const router = express.Router();
 
@@ -34,122 +34,97 @@ function generateExternalEmployeeId() {
 // =============================================================================
 
 /**
- * POST /api/employers/register (Public Signup)
- * Used by the public registration page
+ * Public Employer Registration
  */
 router.post('/register', async (req, res) => {
   await handleEmployerCreation(req, res);
 });
 
 // =============================================================================
-// PROTECTED ROUTES (Admin & Employer)
+// PROTECTED ROUTES (Requires Login)
 // =============================================================================
 router.use(requireAuth);
 
+// -----------------------------------------------------------------------------
+// ADMIN ROUTES (Manage Employers)
+// -----------------------------------------------------------------------------
+
 /**
- * POST /api/employers/signup (Admin Create)
- * Used by the Admin "Create Employer" page
+ * POST /api/employers/signup (Admin creating an Employer)
  */
 router.post('/signup', async (req, res) => {
-  // Only admins should use this specific route, but logic is same as register
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admins only' });
-  }
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   await handleEmployerCreation(req, res);
 });
 
 /**
- * GET /api/employers (Admin List)
- * Used by Admin Dashboard -> Employers Tab
+ * GET /api/employers (Admin listing all Employers)
  */
 router.get('/', async (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admins only' });
-  }
-
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   try {
-    // Fetch all users with role 'employer'
-    const employers = await Employee.find({ role: 'employer' })
-      .sort({ createdAt: -1 })
-      .lean();
+    const employers = await Employee.find({ role: 'employer' }).sort({ createdAt: -1 }).lean();
     res.json(employers);
   } catch (err) {
-    console.error('GET /employers error:', err);
     res.status(500).json({ error: err.message });
   }
 });
 
 /**
- * GET /api/employers/pending (Verification)
- * Used by Admin Dashboard -> Verification Tab
+ * GET /api/employers/pending (Verification Queue)
  */
 router.get('/pending', async (req, res) => {
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admins only' });
-  }
-
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
   try {
-    // Assuming 'status' field exists, or we check verificationStatus
-    // If you don't have a status field yet, this might return empty.
     const pending = await Employee.find({ 
       role: 'employer', 
       $or: [{ status: 'pending' }, { verificationStatus: 'pending' }]
     }).lean();
-    
     res.json(pending);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * POST /api/employers/:id/approve (Verification Action)
- */
 router.post('/:id/approve', async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
-
   try {
-    await Employee.findByIdAndUpdate(req.params.id, { 
-      status: 'active', 
-      verificationStatus: 'verified' 
-    });
+    await Employee.findByIdAndUpdate(req.params.id, { status: 'active', verificationStatus: 'verified' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * POST /api/employers/:id/reject (Verification Action)
- */
 router.post('/:id/reject', async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
-
   try {
-    await Employee.findByIdAndUpdate(req.params.id, { 
-      status: 'rejected', 
-      verificationStatus: 'rejected' 
-    });
+    await Employee.findByIdAndUpdate(req.params.id, { status: 'rejected', verificationStatus: 'rejected' });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// =============================================================================
-// EMPLOYER PROFILE & MANAGEMENT (/me routes)
-// =============================================================================
+// -----------------------------------------------------------------------------
+// EMPLOYER ROUTES (Manage Self & Employees)
+// -----------------------------------------------------------------------------
 
 router.get('/me', async (req, res) => {
-  // Return current employer profile
   res.json({
     id: req.user._id,
     companyName: req.user.companyName,
     email: req.user.email,
-    // ... map other fields as needed
+    addressLine1: req.user.address?.line1,
+    city: req.user.address?.city,
+    state: req.user.address?.state,
+    zip: req.user.address?.zip,
   });
 });
 
+/**
+ * GET /api/employers/me/employees
+ */
 router.get('/me/employees', async (req, res) => {
   try {
     const employees = await Employee.find({ employer: req.user._id, role: 'employee' }).sort({ createdAt: -1 });
@@ -159,19 +134,23 @@ router.get('/me/employees', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/employers/me/employees
+ * Create a new employee & Optionally Trigger Klaviyo Email
+ */
 router.post('/me/employees', async (req, res) => {
-  // Logic to add an employee (same as your previous file)
   try {
-    const { firstName, lastName, email, ...otherData } = req.body;
+    const { firstName, lastName, email, sendOnboardingEmail, ...otherData } = req.body;
     
-    // Check dupe
+    // 1. Check for duplicates
     const existing = await Employee.findOne({ email });
     if (existing) return res.status(400).json({ error: 'Email already in use' });
 
-    // Temp password
-    const tempPass = Math.random().toString(36).slice(-8);
+    // 2. Generate a secure random temp password
+    const tempPass = Math.random().toString(36).slice(-8) + "!1Aa";
     const hash = await bcrypt.hash(tempPass, 10);
 
+    // 3. Create the Employee Record
     const newEmp = await Employee.create({
       ...otherData,
       firstName,
@@ -183,15 +162,63 @@ router.post('/me/employees', async (req, res) => {
       externalEmployeeId: generateExternalEmployeeId()
     });
 
+    // 4. ⚡️ TRIGGER KLAVIYO EMAIL (If checkbox was yes)
+    if (sendOnboardingEmail) {
+      console.log(`📨 Triggering onboarding email for ${email}...`);
+      
+      const loginUrl = "https://www.nwfpayroll.com/employee/employee-login.html"; 
+      
+      // Fire and forget (do not await, so UI is fast)
+      klaviyoService.sendOnboardingEmail(email, firstName, tempPass, loginUrl)
+        .catch(err => console.error("Background Email Error:", err.message));
+    }
+
     res.json(newEmp);
+  } catch (err) {
+    console.error("Create Employee Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/employers/me/payroll-runs
+ */
+router.get('/me/payroll-runs', async (req, res) => {
+  try {
+    const runs = await PayrollRun.find({ employer: req.user._id })
+      .populate('employee')
+      .sort({ payDate: -1, createdAt: -1 })
+      .lean();
+    res.json(runs);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// =============================================================================
-// SHARED HELPER: Handle Creation Logic
-// =============================================================================
+/**
+ * GET /api/employers/me/paystubs
+ */
+router.get('/me/paystubs', async (req, res) => {
+  try {
+    const employees = await Employee.find({ employer: req.user._id, role: 'employee' }).select('_id');
+    const employeeIds = employees.map((e) => e._id);
+
+    if (!employeeIds.length) return res.json([]);
+
+    const paystubs = await Paystub.find({ employee: { $in: employeeIds } })
+      .populate('employee')
+      .sort({ payDate: -1, createdAt: -1 })
+      .lean();
+
+    res.json(paystubs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// HELPER: Shared Creation Logic
+// -----------------------------------------------------------------------------
 async function handleEmployerCreation(req, res) {
   try {
     const {
@@ -213,7 +240,8 @@ async function handleEmployerCreation(req, res) {
 
     const employer = await Employee.create({
       role: 'employer',
-      status: 'pending', // Default to pending so it shows in verification
+      status: 'pending',
+      verificationStatus: 'pending',
       externalEmployeeId,
       firstName,
       lastName,
