@@ -21,6 +21,10 @@ function ensureAdmin(req, res) {
   return req.user;
 }
 
+// ✅ All /api/admin/* routes require a valid JWT with role=admin
+router.use(requireAuth(['admin']));
+
+
 // All /api/admin/* routes require a valid JWT
 router.use(requireAuth);
 
