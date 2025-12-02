@@ -20,6 +20,33 @@ const app = express();
 
 // MIDDLEWARE
 app.use(cors());
+const allowedOrigins = [
+  'https://www.nwfpayroll.com',
+  'http://localhost:5500',
+  'http://127.0.0.1:5500',
+];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow mobile apps / curl / Postman with no origin
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Optional: log unexpected origins
+      console.warn('Blocked CORS origin:', origin);
+      return callback(new Error('Not allowed by CORS'));
+    },
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  })
+);
+
+// Make sure preflight OPTIONS also get CORS headers
+app.options('*', cors());
+
 app.use(express.json());
 app.use(morgan('dev'));
 
