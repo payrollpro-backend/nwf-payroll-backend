@@ -1,12 +1,17 @@
 // src/routes/employersMe.js
 const express = require('express');
 const { requireAuth } = require('../middleware/auth');
-const Employer = require('../models/Employer');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 
 const router = express.Router();
+
+/**
+ * All /api/employers/me* routes require an authenticated employer OR admin.
+ * (admin is allowed so you can later add “view as employer” style tools if you want)
+ */
+router.use(requireAuth(['employer', 'admin']));
 
 /**
  * Helper: figure out which employer id to use.
@@ -20,25 +25,56 @@ function getEmployerIdFromUser(payload) {
 
 /**
  * GET /api/employers/me
- * Return the employer record (like ADP company profile).
+ * Return an employer profile structure that matches what the frontend expects:
+ * {
+ *   id,
+ *   companyName,
+ *   contactEmail,
+ *   contactName,
+ *   addressLine1,
+ *   addressLine2,
+ *   city,
+ *   state,
+ *   zip
+ * }
+ *
+ * We read this from the Employee document where role='employer'.
  */
-router.get('/me', requireAuth(['employer']), async (req, res) => {
+router.get('/me', async (req, res) => {
   try {
     const employerId = getEmployerIdFromUser(req.user);
 
-    let employer = await Employer.findById(employerId).lean();
+    const employerUser = await Employee.findById(employerId).lean();
 
-    // Fallback: if no Employer doc, return a minimal structure
-    if (!employer) {
+    // If we don't find a matching Employee doc, still return a minimal structure
+    if (!employerUser) {
       return res.json({
-        _id: employerId,
-        companyName: 'N/A',
+        id: employerId,
+        companyName: 'Your Company',
         contactEmail: req.user.email || '',
-        contactName: 'N/A',
+        contactName: '',
+        addressLine1: '',
+        addressLine2: '',
+        city: '',
+        state: '',
+        zip: '',
       });
     }
 
-    res.json(employer);
+    const addr = employerUser.address || {};
+
+    res.json({
+      id: employerUser._id,
+      companyName: employerUser.companyName || '',
+      contactEmail: employerUser.email || '',
+      contactName:
+        `${employerUser.firstName || ''} ${employerUser.lastName || ''}`.trim(),
+      addressLine1: addr.line1 || '',
+      addressLine2: addr.line2 || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      zip: addr.zip || '',
+    });
   } catch (err) {
     console.error('/api/employers/me error:', err);
     res.status(500).json({ error: 'Failed to load employer profile' });
@@ -49,12 +85,17 @@ router.get('/me', requireAuth(['employer']), async (req, res) => {
  * GET /api/employers/me/employees
  * List employees for this employer.
  */
-router.get('/me/employees', requireAuth(['employer']), async (req, res) => {
+router.get('/me/employees', async (req, res) => {
   try {
     const employerId = getEmployerIdFromUser(req.user);
 
-    const employees = await Employee.find({ employer: employerId })
-      .select('firstName lastName email externalEmployeeId createdAt')
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .select(
+        'firstName lastName email externalEmployeeId payType payFrequency filingStatus createdAt status'
+      )
       .sort({ createdAt: -1 })
       .lean();
 
@@ -69,12 +110,12 @@ router.get('/me/employees', requireAuth(['employer']), async (req, res) => {
  * GET /api/employers/me/payroll-runs
  * Recent payroll runs for this employer (like ADP run history).
  */
-router.get('/me/payroll-runs', requireAuth(['employer']), async (req, res) => {
+router.get('/me/payroll-runs', async (req, res) => {
   try {
     const employerId = getEmployerIdFromUser(req.user);
 
     const runs = await PayrollRun.find({ employer: employerId })
-      .sort({ payDate: -1 })
+      .sort({ payDate: -1, createdAt: -1 })
       .limit(20)
       .lean();
 
@@ -90,13 +131,16 @@ router.get('/me/payroll-runs', requireAuth(['employer']), async (req, res) => {
  * Recent paystubs across all employees for this employer.
  * Great for a "Recent Activity" widget.
  */
-router.get('/me/paystubs', requireAuth(['employer']), async (req, res) => {
+router.get('/me/paystubs', async (req, res) => {
   try {
     const employerId = getEmployerIdFromUser(req.user);
 
-    // Find employees first
-    const employees = await Employee.find({ employer: employerId })
-      .select('_id firstName lastName externalEmployeeId')
+    // 1) Find employees for this employer
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .select('_id firstName lastName externalEmployeeId email')
       .lean();
 
     if (!employees.length) {
@@ -105,8 +149,11 @@ router.get('/me/paystubs', requireAuth(['employer']), async (req, res) => {
 
     const employeeIds = employees.map((e) => e._id);
 
-    const paystubs = await Paystub.find({ employee: { $in: employeeIds } })
-      .sort({ payDate: -1 })
+    // 2) Find paystubs for those employees
+    const paystubs = await Paystub.find({
+      employee: { $in: employeeIds },
+    })
+      .sort({ payDate: -1, createdAt: -1 })
       .limit(50)
       .populate('employee', 'firstName lastName externalEmployeeId email')
       .lean();
