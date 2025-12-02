@@ -6,7 +6,7 @@ const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 const { requireAuth } = require('../middleware/auth');
-const klaviyoService = require('../services/klaviyoService'); // ✅ Import the Service
+const klaviyoService = require('../services/klaviyoService'); // ✅ Import Klaviyo Service
 
 const router = express.Router();
 
@@ -59,6 +59,7 @@ router.post('/signup', async (req, res) => {
 
 /**
  * GET /api/employers (Admin listing all Employers)
+ * ✅ FIXED: This route allows the Admin Dashboard to load the list.
  */
 router.get('/', async (req, res) => {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admins only' });
