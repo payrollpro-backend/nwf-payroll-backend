@@ -1,25 +1,26 @@
+// src/server.js
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const morgan = require('morgan');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
-const verifyRoutes = require('./routes/verify');
 
+const verifyRoutes = require('./routes/verify');
 const Employee = require('./models/Employee');
 
-// ⬇️ ROUTE IMPORTS (ONE paystubs import only)
+// ⬇️ ROUTE IMPORTS
 const authRoutes = require('./routes/auth');
 const employerRoutes = require('./routes/employers');       // existing employer routes
-const employersMeRoutes = require('./routes/employersMe');  // NEW: /me, /me/employees, etc.
+const employersMeRoutes = require('./routes/employersMe');  // /me, /me/employees, etc.
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
-const paystubRoutes = require('./routes/paystubs'); // <-- use THIS one, single source
+const paystubRoutes = require('./routes/paystubs');         // paystub endpoints
+const adminRoutes = require('./routes/admin');              // 🔹 NEW: admin-only routes
 
 const app = express();
 
-// MIDDLEWARE
-app.use(cors());
+// ---------- CORS ----------
 const allowedOrigins = [
   'https://www.nwfpayroll.com',
   'http://localhost:5500',
@@ -29,13 +30,13 @@ const allowedOrigins = [
 app.use(
   cors({
     origin(origin, callback) {
-      // Allow mobile apps / curl / Postman with no origin
+      // Allow tools with no origin (Postman, curl, mobile apps)
       if (!origin) return callback(null, true);
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      // Optional: log unexpected origins
+
       console.warn('Blocked CORS origin:', origin);
       return callback(new Error('Not allowed by CORS'));
     },
@@ -44,32 +45,45 @@ app.use(
   })
 );
 
-// Make sure preflight OPTIONS also get CORS headers
+// Preflight
 app.options('*', cors());
 
 app.use(express.json());
 app.use(morgan('dev'));
 
-// ROOT HEALTHCHECK
+// ---------- ROOT HEALTHCHECK ----------
 app.get('/', (req, res) => {
   res.json({
     message: process.env.APP_NAME || 'NWF Payroll Backend is running',
   });
 });
 
-// MOUNT ROUTES
+// ---------- ROUTES ----------
+
+// Auth: /api/auth/login, /api/auth/admin-reset-password, etc.
 app.use('/api/auth', authRoutes);
 
-// Both routers share the same /api/employers base path
-app.use('/api/employers', employerRoutes);      // your existing employer routes
-app.use('/api/employers', employersMeRoutes);   // new /me, /me/employees, /me/payroll-runs, /me/paystubs
+// Admin-only routes: create employers, admin tools
+// e.g. POST /api/admin/employers
+app.use('/api/admin', adminRoutes);
 
+// Employer routes (company-level)
+app.use('/api/employers', employerRoutes);      // any existing employer routes
+app.use('/api/employers', employersMeRoutes);   // /me, /me/employees, /me/payroll-runs, /me/paystubs
+
+// Employee self-service routes
 app.use('/api/employees', employeeRoutes);
+
+// Payroll engine
 app.use('/api/payroll', payrollRoutes);
-app.use('/api/paystubs', paystubRoutes); // <-- mounted once
+
+// Paystubs
+app.use('/api/paystubs', paystubRoutes);
+
+// Public paystub verification
 app.use('/api/verify-paystub', verifyRoutes);
 
-// === DEFAULT ADMIN SEEDER ===
+// ---------- DEFAULT ADMIN SEEDER ----------
 async function ensureDefaultAdmin() {
   const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@nwfpayroll.com';
   const password = process.env.DEFAULT_ADMIN_PASSWORD || 'StrongPass123!';
@@ -93,10 +107,11 @@ async function ensureDefaultAdmin() {
   console.log('✅ Created default admin:', email, 'password:', password);
 }
 
-// === DEFAULT EMPLOYER SEEDER ===
+// ---------- DEFAULT EMPLOYER SEEDER ----------
 async function ensureDefaultEmployer() {
   const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
-  const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
+  const defaultPassword =
+    process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
 
   let employer = await Employee.findOne({ email });
 
@@ -111,11 +126,16 @@ async function ensureDefaultEmployer() {
       role: 'employer',
     });
 
-    console.log('✅ Created default employer:', email, 'password:', defaultPassword);
+    console.log(
+      '✅ Created default employer:',
+      email,
+      'password:',
+      defaultPassword
+    );
     return;
   }
 
-  // If it already exists, force role=employer and reset password to default
+  // If it already exists, force role=employer and reset password
   employer.role = 'employer';
   employer.passwordHash = await bcrypt.hash(defaultPassword, 10);
   await employer.save();
@@ -128,8 +148,7 @@ async function ensureDefaultEmployer() {
   );
 }
 
-
-// DB + SERVER START
+// ---------- DB + SERVER START ----------
 const mongoUri = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
 
@@ -144,7 +163,7 @@ mongoose
     console.log('✅ Connected to MongoDB');
 
     await ensureDefaultAdmin();
-    await ensureDefaultEmployer();   // 👈 Make sure your employer user exists / is set
+    await ensureDefaultEmployer();
 
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
