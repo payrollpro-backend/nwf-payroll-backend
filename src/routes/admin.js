@@ -103,5 +103,27 @@ router.post('/employers', async (req, res) => {
     res.status(500).json({ error: err.message || 'Failed to create employer' });
   }
 });
+/**
+ * GET /api/admin/employers
+ * Returns a list of all users with role="employer"
+ */
+router.get('/employers', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    // Find all employees where role is 'employer'
+    // .select('-passwordHash') means "do not send the password back"
+    // .sort({ createdAt: -1 }) means "show newest first"
+    const employers = await Employee.find({ role: 'employer' })
+      .select('-passwordHash') 
+      .sort({ createdAt: -1 });
+
+    res.json({ employers });
+  } catch (err) {
+    console.error('GET /api/admin/employers error:', err);
+    res.status(500).json({ error: 'Failed to fetch employers' });
+  }
+});
 
 module.exports = router;
