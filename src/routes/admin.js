@@ -68,10 +68,14 @@ router.post('/employers', async (req, res) => {
         .status(400)
         .json({ error: 'An account already exists with this email' });
     }
+// ... inside router.post('/employers') ...
 
     // If admin provided a customPassword, use that; otherwise generate one
     const plainPassword = customPassword || generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);
+
+    // Generate a random unique ID for the employer to prevent E11000 error
+    const uniqueId = 'CORP-' + Math.random().toString(36).substr(2, 9).toUpperCase();
 
     const employer = await Employee.create({
       firstName,
