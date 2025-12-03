@@ -26,16 +26,40 @@ router.use(requireAuth(['admin']));
 
 /**
  * Helper: generate a generic / temporary password for new employers
+ * Example: NwfEmp-AB12cd!
  */
 function generateTempPassword() {
-  // Example: NwfEmp-AB12cd!
   const rand = Math.random().toString(36).slice(2, 8); // 6 chars
   return `NwfEmp-${rand}!`;
 }
 
 /**
  * POST /api/admin/employers
+ *
  * Admin creates a new employer account.
+ * Supports BOTH payload styles:
+ *
+ * A) Old / explicit:
+ * {
+ *   firstName,
+ *   lastName,
+ *   email,
+ *   companyName,
+ *   ein,
+ *   address,
+ *   documents,
+ *   customPassword
+ * }
+ *
+ * B) "Create Employer" page style:
+ * {
+ *   companyName,
+ *   companyEmail,
+ *   ein,
+ *   address,
+ *   documents,
+ *   customPassword
+ * }
  */
 router.post('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
@@ -47,43 +71,53 @@ router.post('/employers', async (req, res) => {
       lastName,
       email,
       companyName,
+      companyEmail,
       ein,
       address,
       documents,
       customPassword,
     } = req.body || {};
 
-    if (!firstName || !lastName || !email) {
+    // Normalize required fields so we support both shapes
+    const normalizedCompanyName = (companyName || '').trim();
+    const loginEmail = (email || companyEmail || '').trim().toLowerCase();
+
+    if (!normalizedCompanyName || !loginEmail) {
       return res.status(400).json({
-        error: 'firstName, lastName, and email are required',
+        error: 'companyName and email/companyEmail are required',
       });
     }
 
-    const existing = await Employee.findOne({ email });
+    // Contact name defaults if not provided
+    const contactFirstName = firstName || normalizedCompanyName;
+    const contactLastName = lastName || 'Owner';
+
+    const existing = await Employee.findOne({ email: loginEmail });
     if (existing) {
       return res
         .status(400)
         .json({ error: 'An account already exists with this email' });
     }
 
-    // Generate password
+    // Generate password (admin can override with customPassword)
     const plainPassword = customPassword || generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);
 
-    // ✅ FIX: Generate a unique ID to prevent "duplicate key" error
-    const uniqueId = 'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+    // Unique ID to avoid duplicate externalEmployeeId
+    const uniqueId =
+      'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
 
     const employer = await Employee.create({
-      firstName,
-      lastName,
-      email,
+      firstName: contactFirstName,
+      lastName: contactLastName,
+      email: loginEmail,
       passwordHash,
       role: 'employer',
-      companyName: companyName || '',
+      companyName: normalizedCompanyName,
       ein: ein || '',
       address: address || {},
       documents: documents || [],
-      externalEmployeeId: uniqueId // Forces a unique value
+      externalEmployeeId: uniqueId, // Forces a unique value
     });
 
     res.status(201).json({
@@ -94,29 +128,30 @@ router.post('/employers', async (req, res) => {
         email: employer.email,
         role: employer.role,
         companyName: employer.companyName,
+        createdAt: employer.createdAt,
       },
       tempPassword: plainPassword,
-      message: 'Employer created successfully.',
+      message:
+        'Employer created successfully. Share the email + tempPassword with them to log in.',
     });
   } catch (err) {
     console.error('POST /api/admin/employers error:', err);
     res.status(500).json({ error: err.message || 'Failed to create employer' });
   }
 });
+
 /**
  * GET /api/admin/employers
  * Returns a list of all users with role="employer"
+ * NOTE: still returns { employers } to match existing frontend.
  */
 router.get('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
 
   try {
-    // Find all employees where role is 'employer'
-    // .select('-passwordHash') means "do not send the password back"
-    // .sort({ createdAt: -1 }) means "show newest first"
     const employers = await Employee.find({ role: 'employer' })
-      .select('-passwordHash') 
+      .select('-passwordHash')
       .sort({ createdAt: -1 });
 
     res.json({ employers });
