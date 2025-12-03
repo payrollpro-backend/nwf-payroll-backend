@@ -1,20 +1,13 @@
 // src/routes/employees.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
+
 const router = express.Router();
 
 const Employee = require('../models/Employee');
 const Employer = require('../models/Employer');
-const { requireAuth } = require('../middleware/auth'); // <- only this
-
-// Local admin-only middleware
-function requireAdmin(req, res, next) {
-  // requireAuth must run before this, so req.user should be set
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin role required' });
-  }
-  next();
-}
+const Paystub = require('../models/Paystub');
+const { requireAuth } = require('../middleware/auth');
 
 /**
  * Utility: build a safe JSON view of an employee
@@ -53,11 +46,112 @@ function serializeEmployee(emp) {
   };
 }
 
+/* ------------------------------------------------------------------------ */
+/* EMPLOYEE SELF-SERVICE ENDPOINTS (used by employee login + dashboard)     */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * GET /api/employees/me
+ * Employee sees their own profile (used by employee-dashboard.html).
+ */
+router.get('/me', requireAuth(['employee']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.user.id);
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+    res.json(serializeEmployee(emp));
+  } catch (err) {
+    console.error('GET /api/employees/me error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/employees/me/paystubs
+ * Employee sees ONLY their own paystubs.
+ * Used by employee-dashboard.html for YTD + paystub table.
+ */
+router.get('/me/paystubs', requireAuth(['employee']), async (req, res) => {
+  try {
+    const empId = req.user.id;
+
+    const paystubs = await Paystub.find({ employee: empId })
+      .sort({ payDate: -1, createdAt: -1 })
+      .lean();
+
+    // We just return the raw docs; frontend already expects fields like:
+    // ytdGross, ytdNet, ytdTotalTaxes, netPay, payDate, _id, etc.
+    res.json(paystubs);
+  } catch (err) {
+    console.error('GET /api/employees/me/paystubs error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PATCH /api/employees/me
+ * Employee can update their own profile, but ONLY:
+ * - phone
+ * - address (line1, line2, city, state, zip)
+ * - payMethod
+ * - directDeposit (accountType, bankName, routingNumber, accountNumberLast4)
+ *
+ * Things like hourlyRate / salary / filingStatus stay employer/admin-only.
+ */
+router.patch('/me', requireAuth(['employee']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.user.id);
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    const b = req.body || {};
+
+    if (b.phone !== undefined) {
+      emp.phone = b.phone;
+    }
+
+    if (b.address) {
+      emp.address = {
+        line1: b.address.line1 || '',
+        line2: b.address.line2 || '',
+        city: b.address.city || '',
+        state: b.address.state || '',
+        zip: b.address.zip || '',
+      };
+    }
+
+    if (b.payMethod !== undefined) {
+      emp.payMethod = b.payMethod;
+    }
+
+    if (b.directDeposit) {
+      emp.directDeposit = {
+        accountType: b.directDeposit.accountType || '',
+        bankName: b.directDeposit.bankName || '',
+        routingNumber: b.directDeposit.routingNumber || '',
+        accountNumberLast4: b.directDeposit.accountNumberLast4 || '',
+      };
+    }
+
+    await emp.save();
+    res.json({ employee: serializeEmployee(emp) });
+  } catch (err) {
+    console.error('PATCH /api/employees/me error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/* ------------------------------------------------------------------------ */
+/* ADMIN ENDPOINTS                                                          */
+/* ------------------------------------------------------------------------ */
+
 /**
  * GET /api/employees
  * Admin only – list all employees
  */
-router.get('/', requireAuth, requireAdmin, async (req, res) => {
+router.get('/', requireAuth(['admin']), async (req, res) => {
   try {
     const employees = await Employee.find().sort({ createdAt: -1 }).lean();
     res.json(employees.map(serializeEmployee));
@@ -69,9 +163,9 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
 
 /**
  * GET /api/employees/:id
- * Admin can view any; employees can view themselves.
+ * Admin can view any; employees can ONLY view themselves.
  */
-router.get('/:id', requireAuth, async (req, res) => {
+router.get('/:id', requireAuth(['admin', 'employee']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id).lean();
     if (!emp) {
@@ -94,9 +188,10 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 /**
  * POST /api/employees
- * Admin-only create employee (for now).
+ * Admin-only create employee.
+ * (Employer self-create employees is handled in /api/employers/me/employees.)
  */
-router.post('/', requireAuth, requireAdmin, async (req, res) => {
+router.post('/', requireAuth(['admin']), async (req, res) => {
   try {
     const {
       employerId,
@@ -146,7 +241,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       }
     }
 
-    // temp password
+    // temp password for admin-created employees
     const tempPassword = Math.random().toString(36).slice(-10);
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
@@ -201,8 +296,7 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
       passwordHash,
     });
 
-    // optional: you can wire up an email sender here later
-    // sendWelcomeEmail(newEmp.email, tempPassword, ...)
+    // You can email tempPassword here if needed
 
     res.status(201).json({ employee: serializeEmployee(newEmp) });
   } catch (err) {
@@ -213,9 +307,9 @@ router.post('/', requireAuth, requireAdmin, async (req, res) => {
 
 /**
  * PATCH /api/employees/:id
- * Admin-only update (for now).
+ * Admin-only update of any employee.
  */
-router.patch('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.patch('/:id', requireAuth(['admin']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
     if (!emp) {
