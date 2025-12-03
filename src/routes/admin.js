@@ -1,5 +1,42 @@
 // src/routes/admin.js
+const express = require('express');
+const bcrypt = require('bcryptjs');
+const Employee = require('../models/Employee');
+const { requireAuth } = require('../middleware/auth');
 
+const router = express.Router();
+
+/**
+ * Helper: ensure the current user is an ADMIN
+ */
+function ensureAdmin(req, res) {
+  if (!req.user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return null;
+  }
+  if (req.user.role !== 'admin') {
+    res.status(403).json({ error: 'Admin access required' });
+    return null;
+  }
+  return req.user;
+}
+
+// ✅ All /api/admin/* routes require a valid JWT with role=admin
+router.use(requireAuth(['admin']));
+
+/**
+ * Helper: generate a generic / temporary password for new employers
+ */
+function generateTempPassword() {
+  // Example: NwfEmp-AB12cd!
+  const rand = Math.random().toString(36).slice(2, 8); // 6 chars
+  return `NwfEmp-${rand}!`;
+}
+
+/**
+ * POST /api/admin/employers
+ * Admin creates a new employer account.
+ */
 router.post('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
@@ -24,14 +61,16 @@ router.post('/employers', async (req, res) => {
 
     const existing = await Employee.findOne({ email });
     if (existing) {
-      return res.status(400).json({ error: 'An account already exists with this email' });
+      return res
+        .status(400)
+        .json({ error: 'An account already exists with this email' });
     }
 
+    // Generate password
     const plainPassword = customPassword || generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);
 
-    // 1. GENERATE A UNIQUE ID
-    // This ensures we never send "" (empty string) to the database
+    // ✅ FIX: Generate a unique ID to prevent "duplicate key" error
     const uniqueId = 'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
 
     const employer = await Employee.create({
@@ -44,9 +83,7 @@ router.post('/employers', async (req, res) => {
       ein: ein || '',
       address: address || {},
       documents: documents || [],
-      
-      // 2. FORCE THE ID HERE
-      externalEmployeeId: uniqueId 
+      externalEmployeeId: uniqueId // Forces a unique value
     });
 
     res.status(201).json({
@@ -63,7 +100,8 @@ router.post('/employers', async (req, res) => {
     });
   } catch (err) {
     console.error('POST /api/admin/employers error:', err);
-    // 3. LOG THE EXACT ERROR
     res.status(500).json({ error: err.message || 'Failed to create employer' });
   }
 });
+
+module.exports = router;
