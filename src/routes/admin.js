@@ -24,10 +24,6 @@ function ensureAdmin(req, res) {
 // ✅ All /api/admin/* routes require a valid JWT with role=admin
 router.use(requireAuth(['admin']));
 
-
-// All /api/admin/* routes require a valid JWT
-router.use(requireAuth);
-
 /**
  * Helper: generate a generic / temporary password for new employers
  * You can change this format if you want.
