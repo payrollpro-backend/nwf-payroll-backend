@@ -551,4 +551,77 @@ router.get('/:id/pdf', async (req, res) => {
     doc
       .fontSize(9)
       .fillColor('#111827')
-      .text(companyName, 36, y
+      .text(companyName, 36, y);
+
+    doc.moveDown(0.2);
+    doc
+      .fontSize(8)
+      .fillColor('#4B5563')
+      .text(companyAddressLine1, 36, doc.y);
+    doc
+      .fontSize(8)
+      .text(companyAddressLine2, 36, doc.y);
+
+    doc.moveDown(0.3);
+    doc
+      .fontSize(7)
+      .fillColor('#6B7280')
+      .text(
+        'This statement has been prepared by NWF Payroll Services.',
+        36,
+        doc.y
+      );
+
+    doc.moveDown(1.2);
+
+    // ===== Verification Block =====
+    if (verificationCode) {
+      doc
+        .fontSize(8)
+        .fillColor('#6B7280')
+        .text('Verification', 36, doc.y);
+
+      doc.moveDown(0.3);
+      doc
+        .fontSize(9)
+        .fillColor('#111827')
+        .text(`Code: ${verificationCode}`, 36, doc.y);
+
+      doc.moveDown(0.3);
+      doc
+        .fontSize(8)
+        .fillColor('#6B7280')
+        .text('Verify online at:', 36, doc.y);
+      doc
+        .fontSize(9)
+        .fillColor('#111827')
+        .text(verificationUrl, 120, doc.y - 2);
+    }
+
+    // Reset color and finalize
+    doc.fillColor('#000000');
+    doc.end();
+  } catch (err) {
+    console.error('Error generating paystub PDF (ADP-style):', err);
+    res.status(500).send('Error generating paystub PDF');
+  }
+});
+
+// Get single stub JSON
+router.get('/:id', async (req, res) => {
+  try {
+    const stub = await Paystub.findById(req.params.id).populate(
+      'employee',
+      'firstName lastName email externalEmployeeId'
+    );
+    if (!stub) {
+      return res.status(404).json({ message: 'Paystub not found' });
+    }
+    res.json(stub);
+  } catch (err) {
+    console.error('Error fetching paystub by id:', err);
+    res.status(500).json({ message: 'Server error fetching paystub' });
+  }
+});
+
+module.exports = router;
