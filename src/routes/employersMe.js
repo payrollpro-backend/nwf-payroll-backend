@@ -1,111 +1,153 @@
-// src/routes/employeesMe.js
+// src/routes/employersMe.js
 const express = require('express');
-const router = express.Router();
+const { requireAuth } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
-const { requireAuth } = require('../middleware/auth');
 
-// Force all routes to require "Employee" role
-router.use(requireAuth(['employee']));
+const router = express.Router();
 
-// 1. GET PROFILE (View Dashboard)
-router.get('/', async (req, res) => {
+/**
+ * All /api/employers/me* routes require an authenticated employer OR admin.
+ */
+router.use(requireAuth(['employer', 'admin']));
+
+/**
+ * Helper: figure out which employer id to use.
+ * - If JWT has employerId, use that.
+ * - Otherwise fall back to the user id itself.
+ */
+function getEmployerIdFromUser(payload) {
+  if (payload.employerId) return payload.employerId;
+  return payload.id;
+}
+
+/**
+ * GET /api/employers/me
+ * Return an employer profile structure.
+ */
+router.get('/me', async (req, res) => {
   try {
-    const emp = await Employee.findById(req.user.id).select('-passwordHash -invitationToken');
-    if (!emp) return res.status(404).json({ error: 'Profile not found' });
-    res.json(emp);
+    const employerId = getEmployerIdFromUser(req.user);
+
+    const employerUser = await Employee.findById(employerId).lean();
+
+    // If we don't find a matching Employee doc, still return a minimal structure
+    if (!employerUser) {
+      return res.json({
+        id: employerId,
+        companyName: 'Your Company',
+        contactEmail: req.user.email || '',
+        contactName: '',
+        addressLine1: '',
+        addressLine2: '',
+        city: '',
+        state: '',
+        zip: '',
+      });
+    }
+
+    const addr = employerUser.address || {};
+
+    res.json({
+      id: employerUser._id,
+      companyName: employerUser.companyName || '',
+      contactEmail: employerUser.email || '',
+      contactName:
+        `${employerUser.firstName || ''} ${employerUser.lastName || ''}`.trim(),
+      addressLine1: addr.line1 || '',
+      addressLine2: addr.line2 || '',
+      city: addr.city || '',
+      state: addr.state || '',
+      zip: addr.zip || '',
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('/api/employers/me error:', err);
+    res.status(500).json({ error: 'Failed to load employer profile' });
   }
 });
 
-// 2. UPDATE PROFILE (Edit Address, Phone, Bank)
-router.put('/', async (req, res) => {
+/**
+ * GET /api/employers/me/employees
+ * List employees for this employer.
+ */
+router.get('/me/employees', async (req, res) => {
   try {
-    const { phone, address, directDeposit } = req.body;
-    const emp = await Employee.findById(req.user.id);
+    const employerId = getEmployerIdFromUser(req.user);
 
-    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .select(
+        'firstName lastName email externalEmployeeId payType payFrequency filingStatus createdAt status'
+      )
+      .sort({ createdAt: -1 })
+      .lean();
 
-    // Update allowed fields
-    if (phone) emp.phone = phone;
-    if (address) {
-        emp.address = { ...emp.address, ...address };
-    }
-    
-    // Update Bank Info safely
-    if (directDeposit) {
-        emp.directDeposit = {
-            ...emp.directDeposit,
-            bankName: directDeposit.bankName,
-            accountType: directDeposit.accountType,
-            routingNumber: directDeposit.routingNumber,
-            accountNumber: directDeposit.accountNumber,
-            // Auto-update the "Last 4" for security display
-            accountNumberLast4: directDeposit.accountNumber ? directDeposit.accountNumber.slice(-4) : emp.directDeposit.accountNumberLast4
-        };
-    }
-
-    await emp.save();
-    res.json({ message: 'Profile updated successfully', employee: emp });
+    res.json(employees);
   } catch (err) {
-    console.error("Update Error:", err);
-    res.status(500).json({ error: 'Failed to update profile' });
+    console.error('/api/employers/me/employees error:', err);
+    res.status(500).json({ error: 'Failed to load employees' });
   }
 });
 
-// 3. GET PAYSTUBS
-router.get('/paystubs', async (req, res) => {
+/**
+ * GET /api/employers/me/payroll-runs
+ * Recent payroll runs for this employer.
+ */
+router.get('/me/payroll-runs', async (req, res) => {
   try {
-    const stubs = await Paystub.find({ employee: req.user.id })
-      .sort({ payDate: -1 }) // Newest first
-      .limit(50);
-    res.json(stubs);
+    const employerId = getEmployerIdFromUser(req.user);
+
+    const runs = await PayrollRun.find({ employer: employerId })
+      .sort({ payDate: -1, createdAt: -1 })
+      .limit(20)
+      .lean();
+
+    res.json(runs);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('/api/employers/me/payroll-runs error:', err);
+    res.status(500).json({ error: 'Failed to load payroll runs' });
   }
 });
 
-// 4. GENERATE W-2 SUMMARY (Aggregates Payroll Runs for a Year)
-router.get('/w2', async (req, res) => {
-    try {
-        const year = parseInt(req.query.year) || new Date().getFullYear();
-        
-        const start = new Date(year, 0, 1);       // Jan 1
-        const end = new Date(year + 1, 0, 1);     // Jan 1 Next Year
+/**
+ * GET /api/employers/me/paystubs
+ * Recent paystubs across all employees for this employer.
+ */
+router.get('/me/paystubs', async (req, res) => {
+  try {
+    const employerId = getEmployerIdFromUser(req.user);
 
-        // Aggregate all runs for this employee in that date range
-        const stats = await PayrollRun.aggregate([
-            { 
-                $match: { 
-                    employee: req.user.id, // Only this user's data
-                    payDate: { $gte: start, $lt: end }
-                } 
-            },
-            {
-                $group: {
-                    _id: null,
-                    wages: { $sum: "$grossPay" },
-                    federalIncomeTax: { $sum: "$federalIncomeTax" },
-                    stateIncomeTax: { $sum: "$stateIncomeTax" },
-                    socialSecurity: { $sum: "$socialSecurity" },
-                    medicare: { $sum: "$medicare" },
-                    totalTax: { $sum: "$totalTaxes" }
-                }
-            }
-        ]);
+    // 1) Find employees for this employer
+    const employees = await Employee.find({
+      employer: employerId,
+      role: 'employee',
+    })
+      .select('_id firstName lastName externalEmployeeId email')
+      .lean();
 
-        const result = stats[0] || { 
-            wages: 0, federalIncomeTax: 0, stateIncomeTax: 0, 
-            socialSecurity: 0, medicare: 0, totalTax: 0 
-        };
-
-        res.json(result);
-
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+    if (!employees.length) {
+      return res.json([]);
     }
+
+    const employeeIds = employees.map((e) => e._id);
+
+    // 2) Find paystubs for those employees
+    const paystubs = await Paystub.find({
+      employee: { $in: employeeIds },
+    })
+      .sort({ payDate: -1, createdAt: -1 })
+      .limit(50)
+      .populate('employee', 'firstName lastName externalEmployeeId email')
+      .lean();
+
+    res.json(paystubs);
+  } catch (err) {
+    console.error('/api/employers/me/paystubs error:', err);
+    res.status(500).json({ error: 'Failed to load paystubs' });
+  }
 });
 
 module.exports = router;
