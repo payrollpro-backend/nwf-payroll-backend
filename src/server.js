@@ -18,7 +18,6 @@ const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
 const adminRoutes = require('./routes/admin');              
 
-
 const app = express();
 
 // ---------- CORS ----------
@@ -65,14 +64,13 @@ app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
 
-// ---------- DEFAULT ADMIN SEEDER ----------
+// ---------- SEEDERS ----------
 async function ensureDefaultAdmin() {
   const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@nwfpayroll.com';
   const password = process.env.DEFAULT_ADMIN_PASSWORD || 'StrongPass123!';
 
   const existing = await Employee.findOne({ email });
   if (existing) {
-    // Ensure admin has a unique ID if missing
     if (!existing.externalEmployeeId) {
         existing.externalEmployeeId = 'ADMIN-001';
         await existing.save();
@@ -82,20 +80,17 @@ async function ensureDefaultAdmin() {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-
   await Employee.create({
     firstName: 'NWF',
     lastName: 'Admin',
     email,
     passwordHash,
     role: 'admin',
-    externalEmployeeId: 'ADMIN-001' // ✅ FIXED: Explicit ID to prevent duplicate error
+    externalEmployeeId: 'ADMIN-001'
   });
-
   console.log('✅ Created default admin:', email);
 }
 
-// ---------- DEFAULT EMPLOYER SEEDER ----------
 async function ensureDefaultEmployer() {
   const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
   const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
@@ -110,14 +105,12 @@ async function ensureDefaultEmployer() {
       email,
       passwordHash,
       role: 'employer',
-      externalEmployeeId: 'EMPLOYER-001' // ✅ FIXED: Explicit ID to prevent duplicate error
+      externalEmployeeId: 'EMPLOYER-001'
     });
-
     console.log('✅ Created default employer:', email);
     return;
   }
 
-  // Ensure role and ID are set correctly if existing
   let changed = false;
   if (employer.role !== 'employer') {
       employer.role = 'employer';
@@ -148,29 +141,15 @@ mongoose
   .then(async () => {
     console.log('✅ Connected to MongoDB');
 
+    // 1. FIX: Drop the old index that causes duplicate key errors
     try {
-        await ensureDefaultAdmin();
-        await ensureDefaultEmployer();
-    } catch (seedErr) {
-        console.error("⚠️ Seeding Error (Ignored to keep server alive):", seedErr.message);
-    }
-// ... inside src/server.js
-
-mongoose
-  .connect(mongoUri)
-  .then(async () => {
-    console.log('✅ Connected to MongoDB');
-
-    // ⬇️⬇️⬇️ ADD THIS BLOCK ⬇️⬇️⬇️
-    try {
-       // This deletes the old, strict index so the new "sparse" one can be created
        await mongoose.connection.collection('employees').dropIndex('externalEmployeeId_1');
        console.log('✅ FIX: Dropped old duplicate index on externalEmployeeId');
     } catch (e) {
-       // It's okay if the index doesn't exist, just ignore the error
+       // Index might not exist, which is fine.
     }
-    // ⬆️⬆️⬆️ -----------------------
 
+    // 2. Run Seeders
     try {
         await ensureDefaultAdmin();
         await ensureDefaultEmployer();
@@ -178,11 +157,7 @@ mongoose
         console.error("⚠️ Seeding Error (Ignored):", seedErr.message);
     }
 
-    app.listen(PORT, () => {
-      console.log(`✅ Server listening on port ${PORT}`);
-    });
-  })
-// ... rest of file
+    // 3. Start Server (Only Once!)
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
     });
