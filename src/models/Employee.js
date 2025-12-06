@@ -7,14 +7,37 @@ const EmployeeSchema = new Schema(
     // Link to employer (company)
     employer: { type: Schema.Types.ObjectId, ref: 'Employer', default: null },
 
-    // Basic identity
+    // ----------------------------------------------------------------
+    // ✅ NEW: SELF-ONBOARDING FIELDS
+    // ----------------------------------------------------------------
+    invitationToken: { type: String, default: null }, // Stores the unique link token
+    onboardingCompleted: { type: Boolean, default: false }, // True once they finish setup
+    
+    // Status can now include 'invited'
+    status: {
+      type: String,
+      enum: ['active', 'inactive', 'invited', 'pending'],
+      default: 'active',
+    },
+
+    // ----------------------------------------------------------------
+    // BASIC IDENTITY
+    // ----------------------------------------------------------------
     firstName: { type: String, required: true },
+    middleName: { type: String, default: '' }, // Added to match forms
     lastName: { type: String, required: true },
 
     email: { type: String, required: true, unique: true },
     phone: { type: String, default: '' },
 
-    // Auth
+    // ✅ ADDED: Sensitive info the employee enters during onboarding
+    ssn: { type: String, default: '' }, 
+    dob: { type: Date, default: null },
+    gender: { type: String, default: '' },
+
+    // ----------------------------------------------------------------
+    // AUTH
+    // ----------------------------------------------------------------
     passwordHash: { type: String },
     role: {
       type: String,
@@ -24,8 +47,6 @@ const EmployeeSchema = new Schema(
 
     // External / display employee ID like Emp_ID_XXXXXXXXX
     externalEmployeeId: { type: String, default: '' },
-
-    // Optional “company name” on employee row (for sole props, etc.)
     companyName: { type: String, default: '' },
 
     // Mailing address
@@ -37,24 +58,27 @@ const EmployeeSchema = new Schema(
       zip: { type: String, default: '' },
     },
 
-    // How they get paid out
+    // ----------------------------------------------------------------
+    // BANKING
+    // ----------------------------------------------------------------
     payMethod: {
       type: String,
       enum: ['direct_deposit', 'check'],
       default: 'direct_deposit',
     },
 
-    // Direct deposit info (we only store last4 of account)
     directDeposit: {
-      accountType: { type: String, default: '' }, // checking / savings
+      accountType: { type: String, default: 'Checking' }, 
       bankName: { type: String, default: '' },
       routingNumber: { type: String, default: '' },
+      // ✅ ADDED: Full account number needed for payroll processing
+      accountNumber: { type: String, default: '' }, 
       accountNumberLast4: { type: String, default: '' },
     },
 
-    /**
-     * Pay configuration
-     */
+    // ----------------------------------------------------------------
+    // PAY CONFIGURATION
+    // ----------------------------------------------------------------
     payType: {
       type: String,
       enum: ['hourly', 'salary'],
@@ -79,44 +103,38 @@ const EmployeeSchema = new Schema(
       default: Date.now,
     },
 
-    // Optional “start working this job” date (front-end: startDate)
     startDate: {
       type: Date,
       default: Date.now,
     },
 
-    // active / inactive
-    status: {
-      type: String,
-      enum: ['active', 'inactive'],
-      default: 'active',
-    },
-
-    /**
-     * Tax configuration / W-4-style fields
-     */
-
-    // Filing status for federal & state withholding
+    // ----------------------------------------------------------------
+    // TAX / W-4 INFO
+    // ----------------------------------------------------------------
     filingStatus: {
       type: String,
       enum: ['single', 'married', 'head_of_household'],
       default: 'single',
     },
+    
+    // ✅ ADDED: State filing status often differs from Federal
+    stateFilingStatus: { type: String, default: 'single' },
 
-    // Optional flat “percent of gross” overrides (0 = use default logic)
-    federalWithholdingRate: { type: Number, default: 0 }, // e.g. 0.18 = 18%
-    stateWithholdingRate: { type: Number, default: 0 },   // e.g. 0.05 = 5%
+    federalWithholdingRate: { type: Number, default: 0 }, 
+    stateWithholdingRate: { type: Number, default: 0 },   
 
-    // Allowances / dependents counts (can be used later for a richer engine)
     federalAllowances: { type: Number, default: 0 },
     stateAllowances: { type: Number, default: 0 },
 
-    // Extra dollar amounts to withhold each paycheck
     extraFederalWithholding: { type: Number, default: 0 },
     extraStateWithholding: { type: Number, default: 0 },
 
-    // Optional state code shortcut (if not using address.state)
     stateCode: { type: String, default: '' },
+    
+    // Checkboxes from UI
+    isOfficer: { type: Boolean, default: false },
+    isContractor: { type: Boolean, default: false },
+    isStatutory: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
