@@ -6,11 +6,11 @@ const axios = require('axios');
 // --------------------------------------------------------------------------
 
 // List IDs provided
-const LIST_ID_EMPLOYEE = "WDXx6g";
-const LIST_ID_EMPLOYER = "UDESG8";
+const LIST_ID_EMPLOYEE = "Xc8Pcv";
+const LIST_ID_EMPLOYER = "VGcWV5";
 
 // ⚠️ IMPORTANT: This must be your PRIVATE API Key (starts with pk_...), NOT the Public Site ID (TqthwF).
-const KLAVIYO_PRIVATE_KEY = "pk_db5e64516e47905c28c220e5e3aac4388a"; 
+const KLAVIYO_PRIVATE_KEY = "pk_8aa4622a920b89b233790944bbb639c87d"; 
 
 const KLAVIYO_API_URL = 'https://a.klaviyo.com/api';
 
