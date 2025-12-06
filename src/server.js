@@ -154,7 +154,35 @@ mongoose
     } catch (seedErr) {
         console.error("⚠️ Seeding Error (Ignored to keep server alive):", seedErr.message);
     }
+// ... inside src/server.js
 
+mongoose
+  .connect(mongoUri)
+  .then(async () => {
+    console.log('✅ Connected to MongoDB');
+
+    // ⬇️⬇️⬇️ ADD THIS BLOCK ⬇️⬇️⬇️
+    try {
+       // This deletes the old, strict index so the new "sparse" one can be created
+       await mongoose.connection.collection('employees').dropIndex('externalEmployeeId_1');
+       console.log('✅ FIX: Dropped old duplicate index on externalEmployeeId');
+    } catch (e) {
+       // It's okay if the index doesn't exist, just ignore the error
+    }
+    // ⬆️⬆️⬆️ -----------------------
+
+    try {
+        await ensureDefaultAdmin();
+        await ensureDefaultEmployer();
+    } catch (seedErr) {
+        console.error("⚠️ Seeding Error (Ignored):", seedErr.message);
+    }
+
+    app.listen(PORT, () => {
+      console.log(`✅ Server listening on port ${PORT}`);
+    });
+  })
+// ... rest of file
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
     });
