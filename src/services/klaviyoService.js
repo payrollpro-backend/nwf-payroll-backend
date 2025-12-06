@@ -1,24 +1,28 @@
+// src/services/klaviyoService.js
 const axios = require('axios');
 
 // --------------------------------------------------------------------------
 // KLAVIYO CONFIGURATION
 // --------------------------------------------------------------------------
-const KLAVIYO_LIST_ID = "SqBSRf"; 
 
-// ⚠️ Configured with the key you provided. 
-// If emails fail, verify this is the full 'Private API Key' from Klaviyo Settings.
-const KLAVIYO_PRIVATE_KEY = process.env.KLAVIYO_PRIVATE_KEY || "pk_XVSQvc"; 
+// List IDs provided
+const LIST_ID_EMPLOYEE = "WDXx6g";
+const LIST_ID_EMPLOYER = "UDESG8";
+
+// ⚠️ IMPORTANT: This must be your PRIVATE API Key (starts with pk_...), NOT the Public Site ID (TqthwF).
+const KLAVIYO_PRIVATE_KEY = "pk_db5e64516e47905c28c220e5e3aac4388a"; 
 
 const KLAVIYO_API_URL = 'https://a.klaviyo.com/api';
 
 /**
- * 1. Subscribe the user to the "Employees" list.
- * 2. Trigger the "Employee Onboarding" event to send the welcome email.
+ * Handles adding user to the correct list and triggering the Welcome Flow.
+ * @param {Object} user - The user object (must contain email, firstName, lastName, role)
+ * @param {String} tempPassword - The raw temporary password to send in email
  */
-async function sendOnboardingEmail(email, firstName, tempPassword, loginUrl) {
-  // Security check to prevent crashes if key is missing
-  if (!KLAVIYO_PRIVATE_KEY || !KLAVIYO_PRIVATE_KEY.startsWith("pk_")) {
-    console.warn("⚠️ Klaviyo Private Key is missing or invalid. It must start with 'pk_'. Email event skipped.");
+async function sendWelcomeEvent(user, tempPassword) {
+  // Security check
+  if (!KLAVIYO_PRIVATE_KEY) {
+    console.warn("⚠️ Klaviyo Private Key is missing in .env. Email event skipped.");
     return false;
   }
 
@@ -26,27 +30,39 @@ async function sendOnboardingEmail(email, firstName, tempPassword, loginUrl) {
     'Authorization': `Klaviyo-API-Key ${KLAVIYO_PRIVATE_KEY}`,
     'accept': 'application/vnd.api+json',
     'content-type': 'application/vnd.api+json',
-    'revision': '2023-10-15'
+    'revision': '2024-02-15' // Using modern API revision
   };
 
+  // 1. Determine Logic based on Role
+  const isEmployer = user.role === 'employer';
+  
+  const targetListId = isEmployer ? LIST_ID_EMPLOYER : LIST_ID_EMPLOYEE;
+  
+  const loginUrl = isEmployer 
+    ? 'https://www.nwfpayroll.com/employer-login.html' 
+    : 'https://www.nwfpayroll.com/employee-login.html';
+
+  const eventName = "NWF Account Created"; // This is the Trigger Name for your Flow
+
   try {
-    // --- STEP 1: Create/Update Profile & Subscribe to List ---
+    // --- STEP 1: Add Profile to Specific List ---
     const profilePayload = {
       data: {
         type: 'profile-subscription-bulk-create-job',
         attributes: {
-          list_id: KLAVIYO_LIST_ID,
-          custom_source: 'NWF Payroll Admin',
+          list_id: targetListId,
+          custom_source: 'NWF Admin Dashboard',
           profiles: {
             data: [
               {
                 type: 'profile',
                 attributes: {
-                  email: email,
-                  first_name: firstName,
+                  email: user.email,
+                  first_name: user.firstName,
+                  last_name: user.lastName,
                   properties: {
-                    Role: 'Employee',
-                    System: 'NWF Payroll'
+                    Role: user.role, // 'employee' or 'employer'
+                    Company: user.companyName || 'NWF Payroll'
                   }
                 }
               }
@@ -56,27 +72,35 @@ async function sendOnboardingEmail(email, firstName, tempPassword, loginUrl) {
       }
     };
 
-    // Suppress error if already subscribed (common scenario)
+    // We suppress errors here because if they are already on the list, Klaviyo throws a 409, which is fine.
     await axios.post(`${KLAVIYO_API_URL}/profile-subscription-bulk-create-jobs/`, profilePayload, { headers })
-      .catch(err => console.log("Note: Profile subscription info:", err.response?.data?.errors?.[0]?.detail || err.message));
+      .catch(err => console.log("Info: Profile list subscription:", err.response?.data?.errors?.[0]?.detail || "Already subscribed"));
 
 
     // --- STEP 2: Trigger the Event (Starts the Email Flow) ---
+    // You will use "NWF Account Created" as the trigger in Klaviyo
     const eventPayload = {
       data: {
         type: 'event',
         attributes: {
           profile: {
-            email: email,
-            first_name: firstName
+            email: user.email,
+            first_name: user.firstName,
+            last_name: user.lastName
           },
           metric: {
-            name: 'Employee Onboarding Triggered' // Matches the metric in your Flow
+            data: {
+              type: 'metric',
+              attributes: {
+                name: eventName
+              }
+            }
           },
           properties: {
-            // These variables are passed to your Email Template
+            // These variables are available in your Email Template as {{ event.TemporaryPassword }}
             TemporaryPassword: tempPassword,
             LoginURL: loginUrl,
+            Role: user.role,
             Action: "Account Created"
           },
           time: new Date().toISOString()
@@ -86,7 +110,7 @@ async function sendOnboardingEmail(email, firstName, tempPassword, loginUrl) {
 
     await axios.post(`${KLAVIYO_API_URL}/events/`, eventPayload, { headers });
     
-    console.log(`✅ Klaviyo: Subscribed ${email} to list ${KLAVIYO_LIST_ID} and triggered onboarding event.`);
+    console.log(`✅ Klaviyo: Added ${user.email} to list ${targetListId} and triggered '${eventName}'`);
     return true;
 
   } catch (error) {
@@ -95,4 +119,4 @@ async function sendOnboardingEmail(email, firstName, tempPassword, loginUrl) {
   }
 }
 
-module.exports = { sendOnboardingEmail };
+module.exports = { sendWelcomeEvent };
