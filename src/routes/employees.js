@@ -3,7 +3,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const router = express.Router();
 const Employee = require('../models/Employee');
-const Paystub = require('../models/Paystub');
+const Paystub = require('../models/Paystub'); // Kept if needed by other logic, though not used below
 const { requireAuth } = require('../middleware/auth');
 const klaviyoService = require('../services/klaviyoService');
 
@@ -34,6 +34,27 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
     
     const employees = await Employee.find(query).sort({ createdAt: -1 }).lean();
     res.json(employees.map(serializeEmployee));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ GET SINGLE EMPLOYEE (Fix for Edit Page)
+router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.params.id);
+    
+    if (!emp) {
+      return res.status(404).json({ error: 'Employee not found' });
+    }
+
+    // Security: If employer, ensure they own this employee
+    if (req.user.role === 'employer' && String(emp.employer) !== req.user.id) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Return FULL object (not serialized) so Edit Form can see SSN, Address, Bank Info
+    res.json(emp);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -130,7 +151,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
       
       // Tax Settings
       filingStatus: federalStatus || filingStatus || 'Single',
-      stateFilingStatus: stateStatus || 'Single', // Assuming you have this field in model
+      stateFilingStatus: stateStatus || 'Single', 
       federalWithholdingRate: federalWithholdingRate || 0,
       stateWithholdingRate: stateWithholdingRate || 0,
       dependentsAmount: dependentsAmount || 0,
@@ -149,7 +170,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
     // 5. Send Response WITH tempPassword
     res.status(201).json({ 
       employee: serializeEmployee(newEmp),
-      tempPassword: tempPassword, // <--- THIS IS THE FIX
+      tempPassword: tempPassword, 
       message: "Employee created. Welcome email sent." 
     });
 
