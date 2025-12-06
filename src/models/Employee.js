@@ -10,10 +10,9 @@ const EmployeeSchema = new Schema(
     // ----------------------------------------------------------------
     // ✅ NEW: SELF-ONBOARDING FIELDS
     // ----------------------------------------------------------------
-    invitationToken: { type: String, default: null }, // Stores the unique link token
-    onboardingCompleted: { type: Boolean, default: false }, // True once they finish setup
+    invitationToken: { type: String, default: null },
+    onboardingCompleted: { type: Boolean, default: false },
     
-    // Status can now include 'invited'
     status: {
       type: String,
       enum: ['active', 'inactive', 'invited', 'pending'],
@@ -24,13 +23,12 @@ const EmployeeSchema = new Schema(
     // BASIC IDENTITY
     // ----------------------------------------------------------------
     firstName: { type: String, required: true },
-    middleName: { type: String, default: '' }, // Added to match forms
+    middleName: { type: String, default: '' },
     lastName: { type: String, required: true },
 
     email: { type: String, required: true, unique: true },
     phone: { type: String, default: '' },
 
-    // ✅ ADDED: Sensitive info the employee enters during onboarding
     ssn: { type: String, default: '' }, 
     dob: { type: Date, default: null },
     gender: { type: String, default: '' },
@@ -45,11 +43,17 @@ const EmployeeSchema = new Schema(
       default: 'employee',
     },
 
-    // External / display employee ID like Emp_ID_XXXXXXXXX
-    externalEmployeeId: { type: String, default: '' },
+    // ⬇️⬇️⬇️ FIX IS HERE ⬇️⬇️⬇️
+    // We removed "default: ''" and added "sparse: true"
+    externalEmployeeId: { 
+        type: String, 
+        sparse: true,  // Allows multiple employees to have NO ID
+        unique: true   // But if they DO have an ID, it must be unique
+    }, 
+    // ⬆️⬆️⬆️ -------------------
+
     companyName: { type: String, default: '' },
 
-    // Mailing address
     address: {
       line1: { type: String, default: '' },
       line2: { type: String, default: '' },
@@ -71,7 +75,6 @@ const EmployeeSchema = new Schema(
       accountType: { type: String, default: 'Checking' }, 
       bankName: { type: String, default: '' },
       routingNumber: { type: String, default: '' },
-      // ✅ ADDED: Full account number needed for payroll processing
       accountNumber: { type: String, default: '' }, 
       accountNumberLast4: { type: String, default: '' },
     },
@@ -85,10 +88,7 @@ const EmployeeSchema = new Schema(
       default: 'hourly',
     },
 
-    // used when payType = 'hourly'
     hourlyRate: { type: Number, default: 0 },
-
-    // annual salary when payType = 'salary'
     salaryAmount: { type: Number, default: 0 },
 
     payFrequency: {
@@ -97,16 +97,8 @@ const EmployeeSchema = new Schema(
       default: 'biweekly',
     },
 
-    // Hire date used for YTD context
-    hireDate: {
-      type: Date,
-      default: Date.now,
-    },
-
-    startDate: {
-      type: Date,
-      default: Date.now,
-    },
+    hireDate: { type: Date, default: Date.now },
+    startDate: { type: Date, default: Date.now },
 
     // ----------------------------------------------------------------
     // TAX / W-4 INFO
@@ -117,7 +109,6 @@ const EmployeeSchema = new Schema(
       default: 'single',
     },
     
-    // ✅ ADDED: State filing status often differs from Federal
     stateFilingStatus: { type: String, default: 'single' },
 
     federalWithholdingRate: { type: Number, default: 0 }, 
@@ -131,7 +122,6 @@ const EmployeeSchema = new Schema(
 
     stateCode: { type: String, default: '' },
     
-    // Checkboxes from UI
     isOfficer: { type: Boolean, default: false },
     isContractor: { type: Boolean, default: false },
     isStatutory: { type: Boolean, default: false },
