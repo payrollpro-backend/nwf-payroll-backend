@@ -16,7 +16,8 @@ const employersMeRoutes = require('./routes/employersMe');
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
-const adminRoutes = require('./routes/admin');              
+const adminRoutes = require('./routes/admin');  
+const employeesMeRoutes = require('./routes/employeesMe');
 
 const app = express();
 
@@ -63,6 +64,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
+app.use('/api/employees/me', employeesMeRoutes);
 
 // ---------- SEEDERS ----------
 async function ensureDefaultAdmin() {
