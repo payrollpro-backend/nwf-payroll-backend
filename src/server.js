@@ -11,19 +11,20 @@ const Employee = require('./models/Employee');
 
 // ⬇️ ROUTE IMPORTS
 const authRoutes = require('./routes/auth');
-const employerRoutes = require('./routes/employers');       // existing employer routes
-const employersMeRoutes = require('./routes/employersMe');  // /me, /me/employees, etc.
+const employerRoutes = require('./routes/employers');       
+const employersMeRoutes = require('./routes/employersMe');  
 const employeeRoutes = require('./routes/employees');
 const payrollRoutes = require('./routes/payroll');
-const paystubRoutes = require('./routes/paystubs');         // paystub endpoints
-const adminRoutes = require('./routes/admin');              // 🔹 NEW: admin-only routes
+const paystubRoutes = require('./routes/paystubs');         
+const adminRoutes = require('./routes/admin');              
 
 
 const app = express();
 
-// ---------- CORS ----------
+// ---------- CORS (FIXED) ----------
 const allowedOrigins = [
-  'https://www.nwfpayroll.com',
+  'https://www.nwfpayroll.com',  // WWW version
+  'https://nwfpayroll.com',      // 👈 ADDED: Non-WWW version
   'http://localhost:5500',
   'http://127.0.0.1:5500',
 ];
@@ -61,17 +62,15 @@ app.get('/', (req, res) => {
 
 // ---------- ROUTES ----------
 
-// Auth: /api/auth/login, /api/auth/admin-reset-password, etc.
+// Auth
 app.use('/api/auth', authRoutes);
 
-// Admin-only routes: create employers, admin tools
-// e.g. POST /api/admin/employers
+// Admin-only routes
 app.use('/api/admin', adminRoutes);
 
-
-// Employer routes (company-level)
-app.use('/api/employers', employerRoutes);      // any existing employer routes
-app.use('/api/employers', employersMeRoutes);   // /me, /me/employees, /me/payroll-runs, /me/paystubs
+// Employer routes
+app.use('/api/employers', employerRoutes);      
+app.use('/api/employers', employersMeRoutes);   
 
 // Employee self-service routes
 app.use('/api/employees', employeeRoutes);
