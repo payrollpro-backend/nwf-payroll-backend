@@ -120,7 +120,6 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
 <body>
   <div class="page">
 
-    <!-- Header -->
     <div class="section row">
       <div class="logo">
         <img src="https://cdn.shopify.com/s/files/1/0970/4882/2041/files/NWF_BRANDED_LOGO.png?v=1764317298" />
@@ -137,7 +136,6 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
       </div>
     </div>
 
-    <!-- Payee section -->
     <div class="section">
       <div><span class="label">Pay</span> ________________________________ Dollars</div>
       <div style="margin-top:6px;"><span class="label">To The</span> ${employeeFullName}</div>
@@ -147,14 +145,12 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
 
     <div class="line"></div>
 
-    <!-- Stub section -->
     <div class="section">
       <div class="label">${companyName}</div>
       <div>${employeeFullName}</div>
       <div>Employee ID: ${externalEmployeeId}</div>
 
       <div class="row" style="margin-top:8px;">
-        <!-- Earnings -->
         <div style="width:55%; padding-right:8px;">
           <table>
             <thead>
@@ -178,7 +174,6 @@ function buildPaystubHtml({ stub, employee, payrollRun }) {
           </table>
         </div>
 
-        <!-- Deductions -->
         <div style="width:45%; padding-left:8px;">
           <table>
             <thead>
@@ -231,6 +226,23 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Server error fetching paystubs' });
   }
 });
+
+// ✅ ADDED: Get paystub by PAYROLL RUN ID
+router.get('/by-payroll/:runId', async (req, res) => {
+  try {
+    const stub = await Paystub.findOne({ payrollRun: req.params.runId })
+      .populate('employee', 'firstName lastName email externalEmployeeId');
+
+    if (!stub) {
+      return res.status(404).json({ message: 'Paystub not found for this run' });
+    }
+    res.json(stub);
+  } catch (err) {
+    console.error('Error fetching paystub by run id:', err);
+    res.status(500).json({ message: 'Server error fetching paystub' });
+  }
+});
+
 router.get('/:id/pdf', async (req, res) => {
   try {
     console.log('🔧 NWF PAYSTUB PDF V2 route hit for ID:', req.params.id);
@@ -539,77 +551,4 @@ router.get('/:id/pdf', async (req, res) => {
     doc
       .fontSize(9)
       .fillColor('#111827')
-      .text(companyName, 36, y);
-
-    doc.moveDown(0.2);
-    doc
-      .fontSize(8)
-      .fillColor('#4B5563')
-      .text(companyAddressLine1, 36, doc.y);
-    doc
-      .fontSize(8)
-      .text(companyAddressLine2, 36, doc.y);
-
-    doc.moveDown(0.3);
-    doc
-      .fontSize(7)
-      .fillColor('#6B7280')
-      .text(
-        'This statement has been prepared by NWF Payroll Services.',
-        36,
-        doc.y
-      );
-
-    doc.moveDown(1.2);
-
-    // ===== Verification Block =====
-    if (verificationCode) {
-      doc
-        .fontSize(8)
-        .fillColor('#6B7280')
-        .text('Verification', 36, doc.y);
-
-      doc.moveDown(0.3);
-      doc
-        .fontSize(9)
-        .fillColor('#111827')
-        .text(`Code: ${verificationCode}`, 36, doc.y);
-
-      doc.moveDown(0.3);
-      doc
-        .fontSize(8)
-        .fillColor('#6B7280')
-        .text('Verify online at:', 36, doc.y);
-      doc
-        .fontSize(9)
-        .fillColor('#111827')
-        .text(verificationUrl, 120, doc.y - 2);
-    }
-
-    // Reset color and finalize
-    doc.fillColor('#000000');
-    doc.end();
-  } catch (err) {
-    console.error('Error generating paystub PDF (ADP-style):', err);
-    res.status(500).send('Error generating paystub PDF');
-  }
-});
-
-// Get single stub JSON
-router.get('/:id', async (req, res) => {
-  try {
-    const stub = await Paystub.findById(req.params.id).populate(
-      'employee',
-      'firstName lastName email externalEmployeeId'
-    );
-    if (!stub) {
-      return res.status(404).json({ message: 'Paystub not found' });
-    }
-    res.json(stub);
-  } catch (err) {
-    console.error('Error fetching paystub by id:', err);
-    res.status(500).json({ message: 'Server error fetching paystub' });
-  }
-});
-
-module.exports = router;
+      .text(companyName, 36, y
