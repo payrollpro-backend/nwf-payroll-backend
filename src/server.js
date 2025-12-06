@@ -64,6 +64,7 @@ app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
+app.use('/api/taxforms', require('./routes/taxforms'));
 
 // ---------- DEFAULT ADMIN SEEDER ----------
 async function ensureDefaultAdmin() {
