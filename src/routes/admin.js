@@ -26,7 +26,6 @@ router.use(requireAuth(['admin']));
 
 /**
  * Helper: generate a generic / temporary password for new employers
- * Example: NwfEmp-AB12cd!
  */
 function generateTempPassword() {
   const rand = Math.random().toString(36).slice(2, 8); // 6 chars
@@ -35,31 +34,7 @@ function generateTempPassword() {
 
 /**
  * POST /api/admin/employers
- *
  * Admin creates a new employer account.
- * Supports BOTH payload styles:
- *
- * A) Old / explicit:
- * {
- *   firstName,
- *   lastName,
- *   email,
- *   companyName,
- *   ein,
- *   address,
- *   documents,
- *   customPassword
- * }
- *
- * B) "Create Employer" page style:
- * {
- *   companyName,
- *   companyEmail,
- *   ein,
- *   address,
- *   documents,
- *   customPassword
- * }
  */
 router.post('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
@@ -78,7 +53,6 @@ router.post('/employers', async (req, res) => {
       customPassword,
     } = req.body || {};
 
-    // Normalize required fields so we support both shapes
     const normalizedCompanyName = (companyName || '').trim();
     const loginEmail = (email || companyEmail || '').trim().toLowerCase();
 
@@ -88,24 +62,17 @@ router.post('/employers', async (req, res) => {
       });
     }
 
-    // Contact name defaults if not provided
     const contactFirstName = firstName || normalizedCompanyName;
     const contactLastName = lastName || 'Owner';
 
     const existing = await Employee.findOne({ email: loginEmail });
     if (existing) {
-      return res
-        .status(400)
-        .json({ error: 'An account already exists with this email' });
+      return res.status(400).json({ error: 'An account already exists with this email' });
     }
 
-    // Generate password (admin can override with customPassword)
     const plainPassword = customPassword || generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);
-
-    // Unique ID to avoid duplicate externalEmployeeId
-    const uniqueId =
-      'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+    const uniqueId = 'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
 
     const employer = await Employee.create({
       firstName: contactFirstName,
@@ -117,7 +84,7 @@ router.post('/employers', async (req, res) => {
       ein: ein || '',
       address: address || {},
       documents: documents || [],
-      externalEmployeeId: uniqueId, // Forces a unique value
+      externalEmployeeId: uniqueId,
     });
 
     res.status(201).json({
@@ -131,8 +98,7 @@ router.post('/employers', async (req, res) => {
         createdAt: employer.createdAt,
       },
       tempPassword: plainPassword,
-      message:
-        'Employer created successfully. Share the email + tempPassword with them to log in.',
+      message: 'Employer created successfully.',
     });
   } catch (err) {
     console.error('POST /api/admin/employers error:', err);
@@ -143,7 +109,6 @@ router.post('/employers', async (req, res) => {
 /**
  * GET /api/admin/employers
  * Returns a list of all users with role="employer"
- * NOTE: still returns { employers } to match existing frontend.
  */
 router.get('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
@@ -158,6 +123,63 @@ router.get('/employers', async (req, res) => {
   } catch (err) {
     console.error('GET /api/admin/employers error:', err);
     res.status(500).json({ error: 'Failed to fetch employers' });
+  }
+});
+
+/**
+ * ✅ NEW: PATCH /api/admin/employers/:id
+ * Admin updates an existing employer
+ */
+router.patch('/employers/:id', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp || emp.role !== 'employer') {
+      return res.status(404).json({ error: 'Employer not found' });
+    }
+
+    const b = req.body;
+    
+    // Update fields if provided
+    if (b.companyName) emp.companyName = b.companyName;
+    if (b.firstName) emp.firstName = b.firstName;
+    if (b.lastName) emp.lastName = b.lastName;
+    if (b.email) emp.email = b.email;
+    if (b.ein) emp.ein = b.ein;
+    if (b.address) emp.address = { ...emp.address, ...b.address };
+
+    await emp.save();
+    
+    res.json({ message: 'Employer updated', employer: emp });
+  } catch (err) {
+    console.error('PATCH /api/admin/employers error:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+/**
+ * ✅ NEW: DELETE /api/admin/employers/:id
+ * Admin deletes an employer
+ */
+router.delete('/employers/:id', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    const emp = await Employee.findByIdAndDelete(req.params.id);
+    if (!emp) {
+      return res.status(404).json({ error: 'Employer not found' });
+    }
+    
+    // Optional: You could delete associated data here if needed
+    // await Paystub.deleteMany({ employer: req.params.id });
+
+    res.json({ message: 'Employer deleted successfully' });
+  } catch (err) {
+    console.error('DELETE /api/admin/employers error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
