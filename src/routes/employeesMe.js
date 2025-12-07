@@ -2,8 +2,8 @@
 const express = require('express');
 const router = express.Router();
 const Employee = require('../models/Employee');
-const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
+const PayrollRun = require('../models/PayrollRun'); 
 const { requireAuth } = require('../middleware/auth');
 
 // Force all routes to require "Employee" role
@@ -79,8 +79,8 @@ router.get('/w2', async (req, res) => {
         const stats = await PayrollRun.aggregate([
             { 
                 $match: { 
-                    employee: req.user.id, // Only this user's data
-                    payDate: { $gte: start, $lt: end }
+                    employee: req.user.id, 
+                    payDate: { $gte: start, $lt: end } 
                 } 
             },
             {
