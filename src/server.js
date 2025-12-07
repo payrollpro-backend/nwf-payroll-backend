@@ -18,6 +18,7 @@ const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
 const adminRoutes = require('./routes/admin');
 const verifyRoutes = require('./routes/verify'); // ✅ Loaded once here
+const taxformsRoutes = require('./routes/taxforms');
 
 const app = express();
 
@@ -71,6 +72,9 @@ app.use('/api/employees', employeeRoutes);       // Admin Management
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
+
+// ✅ TAXFORMS & W2 
+app.use('/api/taxforms', taxformsRoutes);
 
 // ---------- SEEDERS ----------
 async function ensureDefaultAdmin() {
