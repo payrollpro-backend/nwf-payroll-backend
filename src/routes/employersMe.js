@@ -1,10 +1,9 @@
 // src/routes/employersMe.js
 const express = require('express');
-const mongoose = require('mongoose'); // Required for aggregation
+const mongoose = require('mongoose');
 const { requireAuth } = require('../middleware/auth');
 const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
-const Paystub = require('../models/Paystub');
 
 const router = express.Router();
 
@@ -15,24 +14,26 @@ function getEmployerIdFromUser(payload) {
   return payload.id;
 }
 
-// ✅ NEW: Dashboard Stats (Correctly Calculates Company-Wide YTD)
+// ✅ FIXED: Dashboard Stats
 router.get('/me/dashboard-stats', async (req, res) => {
   try {
-    const employerId = getEmployerIdFromUser(req.user);
+    const rawId = getEmployerIdFromUser(req.user);
+    const employerId = new mongoose.Types.ObjectId(rawId); // Force ObjectId
     const startOfYear = new Date(new Date().getFullYear(), 0, 1);
 
-    // 1. Get Employee Count
+    // 1. Get Employee Count (Strictly 'active')
+    // If you want to include 'invited' or 'pending', use: { $in: ['active', 'invited'] }
     const employeeCount = await Employee.countDocuments({
         employer: employerId,
         role: 'employee',
-        status: 'Active'
+        status: 'active' 
     });
 
-    // 2. Aggregate Company-Wide YTD Totals (Sum of all runs this year)
+    // 2. Aggregate Company-Wide YTD Totals
     const stats = await PayrollRun.aggregate([
         { 
             $match: { 
-                employer: new mongoose.Types.ObjectId(employerId),
+                employer: employerId,
                 payDate: { $gte: startOfYear } 
             } 
         },
@@ -45,7 +46,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
         }
     ]);
 
-    // 3. Get Info from the VERY LAST Run (for "Latest Run" cards)
+    // 3. Get Details of the VERY LAST Run
     const latestRun = await PayrollRun.findOne({ employer: employerId })
         .sort({ payDate: -1, createdAt: -1 });
 
@@ -64,7 +65,7 @@ router.get('/me/dashboard-stats', async (req, res) => {
   }
 });
 
-// GET Employer Profile
+// GET Profile
 router.get('/me', async (req, res) => {
   try {
     const employerId = getEmployerIdFromUser(req.user);
