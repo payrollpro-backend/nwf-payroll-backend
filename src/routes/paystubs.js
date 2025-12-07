@@ -98,7 +98,7 @@ async function generateSinglePagePdf(paystub, res) {
 
   // Verification
   const verifyCode = paystub.verificationCode || "PENDING";
-  const verifyUrl = "https://nwfpayroll.com/verify";
+  const verifyUrl = "https://nwfpayroll.com/verify.html";
 
   // ======================================================
   // DRAWING FUNCTION
