@@ -1,15 +1,14 @@
+// src/routes/auth.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const Employee = require('../models/Employee');
-const klaviyoService = require('../services/klaviyoService'); // ✅ Import Klaviyo
+const klaviyoService = require('../services/klaviyoService');
+const { requireAuth } = require('../middleware/auth'); // ✅ Needed for change-password
 
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
-
-// Used for generating the clickable link in the email
-// Change this to your actual website URL (e.g. https://www.nwfpayroll.com)
 const FRONTEND_URL = 'https://www.nwfpayroll.com'; 
 
 function signToken(user) {
@@ -23,10 +22,6 @@ function signToken(user) {
     { expiresIn: '7d' }
   );
 }
-
-// -------------------------------------------------------------------------
-// STANDARD LOGIN & REGISTRATION
-// -------------------------------------------------------------------------
 
 router.post('/admin-register', async (req, res) => {
   try {
@@ -47,22 +42,26 @@ router.post('/admin-register', async (req, res) => {
   }
 });
 
+// ✅ LOGIN (Updated)
 router.post('/login', async (req, res) => {
   try {
-    const { email, password } = req.body || {};
+    const { email, password, role } = req.body || {};
     if (!email || !password) return res.status(400).json({ error: 'Missing email or password' });
 
     const user = await Employee.findOne({ email });
     if (!user) return res.status(400).json({ error: 'User not found' });
 
-    // Handle temporary passwords (first login)
     if (!user.passwordHash) {
       user.passwordHash = await bcrypt.hash(password, 10);
-      if (!user.role) user.role = 'admin'; // fallback
+      if (!user.role) user.role = 'admin'; 
       await user.save();
     } else {
       const ok = await bcrypt.compare(password, user.passwordHash);
       if (!ok) return res.status(400).json({ error: 'Invalid password' });
+    }
+
+    if (role && user.role !== role && user.role !== 'admin') {
+       return res.status(403).json({ error: 'Access denied for this portal' });
     }
 
     const token = signToken(user);
@@ -75,6 +74,7 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         employer: user.employer || null,
+        requiresPasswordChange: user.requiresPasswordChange // ✅ Send Flag
       },
     });
   } catch (err) {
@@ -82,38 +82,54 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------------------
-// PASSWORD RESET FLOW
-// -------------------------------------------------------------------------
+// ✅ NEW: CHANGE PASSWORD
+router.post('/change-password', requireAuth(['employee', 'employer', 'admin']), async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        
+        if (!newPassword || newPassword.length < 6) {
+            return res.status(400).json({ error: "Password must be at least 6 characters" });
+        }
 
-/**
- * 1. Request Reset
- * Body: { "email": "user@example.com" }
- */
+        const user = await Employee.findById(req.user.id);
+        if (!user) return res.status(404).json({ error: "User not found" });
+        
+        const salt = await bcrypt.genSalt(10);
+        user.passwordHash = await bcrypt.hash(newPassword, salt);
+        
+        user.requiresPasswordChange = false; // Turn flag off
+        
+        await user.save();
+
+        res.json({ message: "Password updated successfully" });
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PASSWORD RESET FLOW (Forgot Password)
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email required' });
 
     const user = await Employee.findOne({ email });
-    
-    // Security: Always return success message even if user not found (prevents email scraping)
     if (!user) {
       return res.json({ message: 'If an account matches that email, a reset link was sent.' });
     }
 
-    // Generate short-lived reset token (1 hour)
     const resetToken = jwt.sign(
       { id: user._id.toString(), purpose: 'password_reset' },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // Create the link user will click
     const resetLink = `${FRONTEND_URL}/reset-password.html?token=${resetToken}`;
 
-    // Send via Klaviyo
-    await klaviyoService.sendPasswordResetEmail(user.email, resetLink);
+    if (klaviyoService && klaviyoService.sendPasswordResetEmail) {
+        await klaviyoService.sendPasswordResetEmail(user.email, resetLink);
+    }
 
     res.json({ message: 'If an account matches that email, a reset link was sent.' });
   } catch (err) {
@@ -122,16 +138,11 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-/**
- * 2. Confirm Reset
- * Body: { "token": "...", "newPassword": "..." }
- */
 router.post('/reset-password-confirm', async (req, res) => {
   try {
     const { token, newPassword } = req.body;
     if (!token || !newPassword) return res.status(400).json({ error: 'Missing token or password' });
 
-    // Verify token
     let decoded;
     try {
       decoded = jwt.verify(token, JWT_SECRET);
@@ -146,7 +157,6 @@ router.post('/reset-password-confirm', async (req, res) => {
     const user = await Employee.findById(decoded.id);
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
-    // Update password
     user.passwordHash = await bcrypt.hash(newPassword, 10);
     await user.save();
 
