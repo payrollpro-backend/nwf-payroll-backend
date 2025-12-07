@@ -8,11 +8,14 @@ const EmployeeSchema = new Schema(
     employer: { type: Schema.Types.ObjectId, ref: 'Employer', default: null },
 
     // ----------------------------------------------------------------
-    // ✅ NEW: SELF-ONBOARDING FIELDS
+    // SELF-ONBOARDING FIELDS
     // ----------------------------------------------------------------
     invitationToken: { type: String, default: null },
     onboardingCompleted: { type: Boolean, default: false },
     
+    // ✅ NEW: Force password change flag
+    requiresPasswordChange: { type: Boolean, default: false },
+
     status: {
       type: String,
       enum: ['active', 'inactive', 'invited', 'pending'],
@@ -43,14 +46,11 @@ const EmployeeSchema = new Schema(
       default: 'employee',
     },
 
-    // ⬇️⬇️⬇️ FIX IS HERE ⬇️⬇️⬇️
-    // We removed "default: ''" and added "sparse: true"
     externalEmployeeId: { 
         type: String, 
-        sparse: true,  // Allows multiple employees to have NO ID
-        unique: true   // But if they DO have an ID, it must be unique
+        sparse: true,  
+        unique: true   
     }, 
-    // ⬆️⬆️⬆️ -------------------
 
     companyName: { type: String, default: '' },
 
