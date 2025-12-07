@@ -1,7 +1,7 @@
 // src/routes/employees.js
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto'); // Required for generating invite tokens
+const crypto = require('crypto');
 const router = express.Router();
 const Employee = require('../models/Employee');
 const Paystub = require('../models/Paystub');
@@ -25,30 +25,19 @@ function serializeEmployee(emp) {
   };
 }
 
-// ==============================================================================
-//  SELF-ONBOARDING ROUTES (ADP/GUSTO STYLE)
-// ==============================================================================
-
-// ✅ 1. INVITE EMPLOYEE (Employer initiates, System sends email)
+// ✅ 1. INVITE EMPLOYEE (Self-Onboarding)
 router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const { firstName, lastName, email, payRate, payType, hireDate } = req.body;
 
-    // Basic Validation
     if (!email || !firstName || !lastName) {
       return res.status(400).json({ error: "Name and Email are required" });
     }
 
-    // Check if exists
     const existing = await Employee.findOne({ email });
     if (existing) return res.status(400).json({ error: "Employee email already exists" });
 
-    // Generate a Secure Token
     const inviteToken = crypto.randomBytes(32).toString('hex');
-
-    // Create "Shell" Employee Record
-    // We set a temporary random password just to satisfy database constraints.
-    // The user will overwrite this when they complete onboarding.
     const tempPass = await bcrypt.hash(inviteToken, 10); 
 
     const newEmp = await Employee.create({
@@ -57,31 +46,28 @@ router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
       lastName, 
       email,
       role: 'employee',
-      status: 'invited', // Special status
+      status: 'invited',
       onboardingCompleted: false,
       invitationToken: inviteToken,
-      passwordHash: tempPass, 
+      passwordHash: tempPass,
+      requiresPasswordChange: false, // Self-onboarders set their own password later
       
-      // Pay Info (Employer sets this, employee usually can't change it)
       payType: payType || 'hourly',
       hourlyRate: (payType === 'hourly') ? payRate : 0,
       salaryAmount: (payType === 'salary') ? payRate : 0,
       hireDate: hireDate || Date.now()
     });
 
-    // Send the Email (Link to your frontend setup page)
-    // Adjust domain to match your live site or localhost
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5500'; 
+    const frontendUrl = process.env.FRONTEND_URL || 'https://nwfpayroll.com'; 
     const onboardLink = `${frontendUrl}/setup-account.html?token=${inviteToken}`;
     
-    // Call Klaviyo or Email Service
     if (klaviyoService && klaviyoService.sendInvite) {
         await klaviyoService.sendInvite(newEmp, onboardLink);
     }
     
     res.status(201).json({ 
         message: "Invitation sent successfully", 
-        link: onboardLink, // Returning link for testing/debugging
+        link: onboardLink,
         employee: serializeEmployee(newEmp)
     });
 
@@ -90,13 +76,12 @@ router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ✅ 2. VERIFY TOKEN (Public - Used by setup page to load user name)
+// ✅ 2. VERIFY TOKEN
 router.get('/onboard/:token', async (req, res) => {
     try {
         const emp = await Employee.findOne({ invitationToken: req.params.token });
         if (!emp) return res.status(404).json({ error: "Invalid or expired link" });
         
-        // Return basic info so the user knows they are setting up the right account
         res.json({ 
             email: emp.email, 
             firstName: emp.firstName, 
@@ -107,47 +92,42 @@ router.get('/onboard/:token', async (req, res) => {
     }
 });
 
-// ✅ 3. COMPLETE SETUP (Public - User submits Password, SSN, Bank)
+// ✅ 3. COMPLETE SETUP
 router.post('/onboard/complete', async (req, res) => {
     try {
         const { 
             token, password, 
             ssn, dob, phone, gender,
-            address, // { line1, city, state, zip }
+            address,
             bankName, routingNumber, accountNumber, accountType,
             filingStatus, stateFilingStatus 
         } = req.body;
 
-        // Find by Token
         const emp = await Employee.findOne({ invitationToken: token });
         if (!emp) return res.status(400).json({ error: "Invalid or expired token" });
 
-        // Hash new password (User defined)
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Update Employee Record with sensitive data
         emp.passwordHash = hashedPassword;
+        emp.requiresPasswordChange = false; // They just set it
         emp.phone = phone;
         emp.ssn = ssn;
         emp.dob = dob;
         emp.gender = gender;
         emp.address = address; 
         
-        // Update Banking
         emp.directDeposit = {
             bankName,
             routingNumber,
-            accountNumber, // Full number
+            accountNumber,
             accountNumberLast4: accountNumber.slice(-4),
             accountType: accountType || 'Checking'
         };
 
-        // Update Tax
         emp.filingStatus = filingStatus || 'single';
         emp.stateFilingStatus = stateFilingStatus || 'single';
         
-        // Finalize
-        emp.invitationToken = null; // Clear token so link cannot be used again
+        emp.invitationToken = null;
         emp.onboardingCompleted = true;
         emp.status = 'active';
 
@@ -164,7 +144,6 @@ router.post('/onboard/complete', async (req, res) => {
 //  STANDARD CRUD ROUTES
 // ==============================================================================
 
-// ✅ LIST EMPLOYEES
 router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     let query = {};
@@ -178,7 +157,6 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ✅ GET SINGLE EMPLOYEE (Fix for Edit Page)
 router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
@@ -193,7 +171,7 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ✅ MANUAL CREATE EMPLOYEE (Admin/Employer full entry)
+// ✅ MANUAL CREATE EMPLOYEE
 router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const {
@@ -244,6 +222,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
       role: 'employee',
       companyName: finalCompanyName,
       passwordHash,
+      requiresPasswordChange: true, // ✅ Force change on manual create
       address: address || {},
       ssn, dob, gender,
       startDate: hireDate ? new Date(hireDate) : (startDate ? new Date(startDate) : Date.now()),
@@ -283,7 +262,6 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ✅ UPDATE EMPLOYEE
 router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
@@ -312,7 +290,6 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ✅ DELETE EMPLOYEE
 router.delete('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
