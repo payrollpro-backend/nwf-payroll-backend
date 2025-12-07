@@ -15,6 +15,7 @@ try {
 // --- GA TAX FORMULA ---
 function calculateGaTaxes(gross) {
   const safeGross = gross || 0;
+  // Rates approximated from your output
   const fedRate = 0.1780;
   const gaRate = 0.0543;
   const ssRate = 0.062;
@@ -45,39 +46,40 @@ async function generateSinglePagePdf(paystub, res) {
   
   doc.pipe(res);
 
-  // --- DATA PREP (With Safety Checks) ---
+  // --- DATA PREP ---
   const emp = paystub.employee || {};
   const gross = paystub.grossPay || 0;
   
+  // Use DB values if they exist, otherwise calc
   const taxes = calculateGaTaxes(gross);
+  const net = paystub.netPay || taxes.net;
   
-  const net = taxes.net;
-  const fedVal = taxes.fed;
-  const stateVal = taxes.state;
-  const ssVal = taxes.ss;
-  const medVal = taxes.med;
+  // If taxes are stored in DB, use them. Else use calc.
+  const fedVal = paystub.federalIncomeTax || taxes.fed;
+  const stateVal = paystub.stateIncomeTax || taxes.state;
+  const ssVal = paystub.socialSecurity || taxes.ss;
+  const medVal = paystub.medicare || taxes.med;
 
-  // YTD Logic
-  const ytdGross = paystub.ytdGross || (gross * 10);
-  const ytdFed = paystub.ytdFederalIncomeTax || (fedVal * 10);
-  const ytdState = paystub.ytdStateIncomeTax || (stateVal * 10);
-  const ytdSS = paystub.ytdSocialSecurity || (ssVal * 10);
-  const ytdMed = paystub.ytdMedicare || (medVal * 10);
+  // YTD Logic (Use stored or project)
+  const ytdGross = paystub.ytdGross || gross;
+  const ytdFed = paystub.ytdFederalIncomeTax || fedVal;
+  const ytdState = paystub.ytdStateIncomeTax || stateVal;
+  const ytdSS = paystub.ytdSocialSecurity || ssVal;
+  const ytdMed = paystub.ytdMedicare || medVal;
 
-  // Dates
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '01/01/2025';
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString();
   
   const checkDate = formatDate(paystub.payDate);
   const periodStart = formatDate(paystub.periodStart || paystub.payPeriodStart);
   const periodEnd = formatDate(paystub.periodEnd || paystub.payPeriodEnd);
 
-  // Employee Details (Defaults to prevent crash)
   const empName = `${emp.lastName || 'EMPLOYEE'}, ${emp.firstName || 'NAME'}`.toUpperCase();
-  const empAddr1 = emp.address?.line1 || "ADDRESS NOT ON FILE";
+  const empAddr1 = (emp.address?.line1 || "").toUpperCase();
   const empAddr2 = `${emp.address?.city || ''}, ${emp.address?.state || ''} ${emp.address?.zip || ''}`.toUpperCase();
-  const empId = emp.externalEmployeeId || "N/A";
+  
+  // FIX: Fallback to partial ID if external ID is missing
+  const empId = emp.externalEmployeeId || `EMP-${emp._id.toString().slice(-6).toUpperCase()}`;
 
-  // Company Info
   const coName = "NWF PAYROLL SERVICES"; 
   const coAddr1 = "4711 NUTMEG WAY SW";
   const coAddr2 = "LILBURN, GA 30047";
@@ -85,107 +87,139 @@ async function generateSinglePagePdf(paystub, res) {
   // --- DRAWING ---
 
   // 1. TOP CHECK SECTION
-  doc.font('Helvetica-Bold').fontSize(24).text('NWF', 40, 30);
-  doc.fontSize(8).text('PAYROLL SERVICES', 40, 55);
+  // Adjusted coordinates to prevent text overlapping
+  doc.font('Helvetica-Bold').fontSize(18).text('NWF', 40, 40);
+  doc.fontSize(8).text('PAYROLL SERVICES', 40, 60);
 
+  // Date & Amount Block (Top Right)
   doc.font('Helvetica').fontSize(10);
-  doc.text('Check Date', 600, 80, { align: 'right' });
-  doc.text(checkDate, 500, 95); 
   
-  doc.text('Amount', 500, 80, { align: 'right' });
-  doc.text(fmt(net), 550, 95, { align: 'right' });
+  // Box labels
+  doc.text('Check Date', 450, 50, { align: 'right', width: 70 });
+  doc.text('Amount', 530, 50, { align: 'right', width: 70 });
+  
+  // Box Values
+  doc.font('Helvetica-Bold');
+  doc.text(checkDate, 450, 65, { align: 'right', width: 70 }); 
+  doc.text(fmt(net), 530, 65, { align: 'right', width: 70 });
 
   // "Pay" Line
-  const payY = 140;
-  doc.font('Helvetica-Bold').text('Pay', 40, payY);
+  const payY = 120;
+  doc.font('Helvetica-Bold').fontSize(11).text('PAY', 40, payY);
+  
+  // Amount Text
   const amountTxt = `*** ${fmt(net)} ***`; 
-  doc.font('Helvetica-Bold').text(amountTxt, 100, payY);
-  doc.text('Dollars', 530, payY);
+  doc.font('Courier-Bold').fontSize(12).text(amountTxt, 100, payY - 2);
+  doc.font('Helvetica').fontSize(11).text('Dollars', 530, payY);
   
   doc.moveTo(90, payY + 10).lineTo(520, payY + 10).stroke(); 
 
   // "To The Order Of"
-  const orderY = 160;
-  doc.font('Helvetica-Bold').text('To The', 40, orderY);
-  doc.text('Order Of:', 40, orderY + 12);
+  const orderY = 150;
+  doc.font('Helvetica-Bold').fontSize(10).text('TO THE', 40, orderY);
+  doc.text('ORDER OF:', 40, orderY + 12);
 
-  doc.font('Helvetica').text(empName, 100, orderY);
-  doc.text(empAddr1, 100, orderY + 12);
-  doc.text(empAddr2, 100, orderY + 24);
+  doc.font('Helvetica').fontSize(11).text(empName, 120, orderY - 5);
+  doc.fontSize(10).text(empAddr1, 120, orderY + 12);
+  doc.text(empAddr2, 120, orderY + 25);
 
   // Memo
-  doc.font('Helvetica-Bold').text('Memo', 40, 220);
-  doc.moveTo(90, 230).lineTo(350, 230).stroke();
+  doc.font('Helvetica-Bold').text('MEMO', 40, 210);
+  doc.font('Courier').text(`Payroll: ${periodEnd}`, 90, 210);
+  doc.moveTo(80, 220).lineTo(300, 220).stroke();
 
-  // Signature
-  doc.moveTo(400, 230).lineTo(580, 230).stroke();
-  doc.font('Helvetica').fontSize(8).text('AUTHORIZED SIGNATURE', 430, 235);
+  // Signature Line
+  doc.moveTo(380, 220).lineTo(580, 220).stroke();
+  doc.font('Helvetica').fontSize(7).text('AUTHORIZED SIGNATURE', 450, 225);
 
-  // MICR
-  doc.font('Courier').fontSize(12).text(`"001234080"`, 180, 260);
+  // MICR Line (Bottom of Check)
+  doc.font('Courier').fontSize(14).text(`A001234080A  1080C  ${fmt(net).replace('.','')}D`, 100, 260);
 
-  // 2. STUBS
+  // 2. STUBS (Middle and Bottom)
   drawStub(doc, 320, coName, empName, empId, checkDate, periodStart, periodEnd, gross, net, fedVal, stateVal, ssVal, medVal, ytdGross, ytdFed, ytdState, ytdSS, ytdMed);
   drawStub(doc, 580, coName, empName, empId, checkDate, periodStart, periodEnd, gross, net, fedVal, stateVal, ssVal, medVal, ytdGross, ytdFed, ytdState, ytdSS, ytdMed);
 
-  // Footer
-  doc.font('Helvetica-Bold').fontSize(12).text(coName, 40, 750);
-  doc.font('Helvetica').fontSize(10).text(coAddr1, 40, 765);
-  doc.text(coAddr2, 40, 778);
+  // Footer Company Info
+  doc.font('Helvetica-Bold').fontSize(10).text(coName, 40, 750);
+  doc.font('Helvetica').fontSize(9).text(coAddr1, 40, 762);
+  doc.text(coAddr2, 40, 773);
 
-  doc.font('Helvetica').text('Net Pay:', 450, 780);
-  doc.text('$', 520, 780);
-  doc.text(fmt(net), 540, 780);
+  // Bottom Net Pay
+  doc.font('Helvetica-Bold').fontSize(11).text('Net Pay:', 450, 760);
+  doc.fontSize(12).text(`$${fmt(net)}`, 500, 760);
 
   doc.end();
 }
 
 function drawStub(doc, startY, coName, empName, empId, checkDate, pStart, pEnd, gross, net, fed, state, ss, med, ytdGross, ytdFed, ytdState, ytdSS, ytdMed) {
   
-  doc.font('Helvetica-Bold').fontSize(10).text(coName, 40, startY);
+  // Header Row
+  doc.font('Helvetica-Bold').fontSize(9).text(coName, 40, startY);
   doc.text('1080', 550, startY); 
 
-  const infoY = startY + 25;
+  // Employee Info Block
+  const infoY = startY + 20;
   doc.font('Helvetica').text(empName, 40, infoY);
-  doc.text(`Employee ID:  ${empId}`, 40, infoY + 15);
+  doc.text(`ID: ${empId}`, 40, infoY + 12);
 
-  doc.text('Check Date:', 350, infoY);       doc.text(checkDate, 480, infoY);
-  doc.text('Period Start:', 350, infoY + 12); doc.text(pStart, 480, infoY + 12);
-  doc.text('Period End:', 350, infoY + 24);    doc.text(pEnd, 480, infoY + 24);
+  // Date Block
+  const dateX = 400;
+  doc.text('Check Date:', dateX, infoY);       doc.text(checkDate, dateX + 80, infoY, { align: 'right', width: 70 });
+  doc.text('Period Start:', dateX, infoY + 12); doc.text(pStart, dateX + 80, infoY + 12, { align: 'right', width: 70 });
+  doc.text('Period End:', dateX, infoY + 24);   doc.text(pEnd, dateX + 80, infoY + 24, { align: 'right', width: 70 });
 
-  const tableY = startY + 70;
+  // --- EARNINGS TABLE ---
+  const tableY = startY + 60;
   
-  doc.font('Helvetica').text('Earnings', 40, tableY);
-  doc.text('Current', 250, tableY);
-  doc.text('YTD', 320, tableY);
-  doc.moveTo(40, tableY + 12).lineTo(380, tableY + 12).stroke();
+  // Headers
+  doc.font('Helvetica-Bold').fontSize(9);
+  doc.text('Earnings', 40, tableY);
+  doc.text('Current', 200, tableY, { align: 'right', width: 60 });
+  doc.text('YTD', 280, tableY, { align: 'right', width: 60 });
+  
+  doc.text('Deductions', 380, tableY);
+  doc.text('Current', 480, tableY, { align: 'right', width: 50 });
+  doc.text('YTD', 540, tableY, { align: 'right', width: 50 });
+  
+  doc.moveTo(40, tableY + 12).lineTo(590, tableY + 12).stroke();
 
-  doc.text('Regular', 40, tableY + 15);
-  doc.text(fmt(gross), 250, tableY + 15);
-  doc.text(fmt(ytdGross), 320, tableY + 15);
+  // Rows
+  let dy = tableY + 18;
+  doc.font('Helvetica').fontSize(9);
 
-  const dedX = 390;
-  doc.text('Deductions:', dedX, tableY);
-  doc.text('Current', 500, tableY);
-  doc.text('YTD', 560, tableY);
-  doc.moveTo(dedX, tableY + 12).lineTo(600, tableY + 12).stroke();
+  // Earnings Rows
+  doc.text('Regular Pay', 40, dy);
+  doc.text(fmt(gross), 200, dy, { align: 'right', width: 60 });
+  doc.text(fmt(ytdGross), 280, dy, { align: 'right', width: 60 });
 
-  let dy = tableY + 15;
-  const drawRow = (lbl, cur, ytd) => {
-    doc.text(lbl, dedX, dy);
-    doc.text(fmt(cur), 500, dy);
-    doc.text(fmt(ytd), 560, dy);
+  // Deductions Rows
+  const dedX = 380;
+  const curX = 480;
+  const ytdX = 540;
+
+  const drawDed = (label, cur, ytd) => {
+    doc.text(label, dedX, dy);
+    doc.text(fmt(cur), curX, dy, { align: 'right', width: 50 });
+    doc.text(fmt(ytd), ytdX, dy, { align: 'right', width: 50 });
     dy += 12;
   };
 
-  drawRow('Fed Tax', fed, ytdFed);
-  drawRow('State Tax', state, ytdState);
-  drawRow('Soc Sec', ss, ytdSS);
-  drawRow('Medicare', med, ytdMed);
+  drawDed('Federal Tax', fed, ytdFed);
+  drawDed('State Tax', state, ytdState);
+  drawDed('Social Security', ss, ytdSS);
+  drawDed('Medicare', med, ytdMed);
 
-  doc.text('Net Pay:', 350, dy + 20);
-  doc.text('$', 480, dy + 20);
-  doc.text(fmt(net), 500, dy + 20);
+  // Totals Line
+  dy += 5;
+  doc.moveTo(40, dy).lineTo(590, dy).stroke();
+  dy += 5;
+  
+  doc.font('Helvetica-Bold');
+  doc.text('NET PAY', 380, dy);
+  doc.text(`$${fmt(net)}`, curX, dy, { align: 'right', width: 50 });
+  // Calculate YTD Net for display
+  const ytdNet = ytdGross - (ytdFed + ytdState + ytdSS + ytdMed);
+  doc.text(`$${fmt(ytdNet)}`, ytdX, dy, { align: 'right', width: 50 });
 }
 
 
@@ -212,18 +246,13 @@ router.get('/by-payroll/:runId', async (req, res) => {
   }
 });
 
-// PDF Generation Route
 router.get('/:id/pdf', async (req, res) => {
   try {
     const paystub = await Paystub.findById(req.params.id).populate('employee');
-
     if (!paystub) return res.status(404).send('Error: Paystub record not found in database.');
-
     await generateSinglePagePdf(paystub, res);
-
   } catch (err) {
     console.error('PDF Gen Error:', err);
-    // ✅ THIS IS THE FIX: Send the actual error message
     res.status(500).send(`Error generating PDF: ${err.message}`);
   }
 });
