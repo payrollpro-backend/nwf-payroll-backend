@@ -2,7 +2,7 @@
 const axios = require('axios');
 
 // ⚠️ REPLACE THIS WITH YOUR REAL PRIVATE KEY (starts with pk_)
-const API_KEY = "pk_8aa4622a920b89b233790944bbb639c87d"; 
+const API_KEY = "pk_f936a314bc7ddb3a94c7081063fc3726ad"; 
 
 async function runTest() {
     console.log("🚀 Starting Klaviyo Connection Test...");
