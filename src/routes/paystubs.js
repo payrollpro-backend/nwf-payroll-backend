@@ -159,7 +159,7 @@ async function generateSinglePagePdf(paystub, res) {
     let dy = tableY + 18;
     doc.text('Gross', rightStart, dy);
     doc.text(fmt(gross), 480, dy, { align: 'right', width: 50 });
-    doc.text(fmt(ytdGross), 540, dy, { align: 'right', width: 50 });
+    doc.text(fmt(ytdGross), 520, dy, { align: 'right', width: 50 });
     dy += 12;
 
     const taxRows = [
@@ -184,7 +184,7 @@ async function generateSinglePagePdf(paystub, res) {
     doc.fontSize(12);
     doc.text('$', 470, netY);
     doc.text(fmt(net), 490, netY);
-    doc.text(fmt(ytdGross - (ytdFed+ytdSS+ytdMed+ytdState)), 540, netY, { align: 'right', width: 50 });
+    doc.text(fmt(ytdGross - (ytdFed+ytdSS+ytdMed+ytdState)), 520, netY, { align: 'right', width: 50 });
   }
 
   // --- DRAW PAGE ---
