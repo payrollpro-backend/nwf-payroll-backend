@@ -22,16 +22,17 @@ async function generateW2(employee, year, stats, res) {
   doc.fontSize(10).text('Copy B - To Be Filed With Employee\'s Federal Tax Return', { align: 'center' });
   doc.moveDown(2);
 
-  // DRAW BOXES
+  // DRAW BOXES (Simplified for portal view)
   const startY = 100;
   
-  // Left Column (Employer/Employee Info)
+  // Employer Info
   doc.rect(30, startY, 250, 80).stroke();
   doc.text('c. Employer\'s name, address, and ZIP code', 35, startY + 5);
   doc.font('Helvetica').text((employee.companyName || "NWF Payroll Services").toUpperCase(), 35, startY + 20);
   doc.text("123 PAYROLL STREET", 35, startY + 35);
   doc.text("ATLANTA, GA 30303", 35, startY + 50);
 
+  // Employee Info
   doc.font('Helvetica-Bold');
   doc.rect(30, startY + 90, 250, 80).stroke();
   doc.text('e. Employee\'s name, address, and ZIP code', 35, startY + 95);
@@ -39,15 +40,14 @@ async function generateW2(employee, year, stats, res) {
   doc.text((employee.address?.line1 || "").toUpperCase(), 35, startY + 125);
   doc.text(`${employee.address?.city || ''}, ${employee.address?.state || ''} ${employee.address?.zip || ''}`.toUpperCase(), 35, startY + 140);
 
+  // Employee SSN
   doc.font('Helvetica-Bold');
   doc.rect(30, startY + 180, 250, 40).stroke();
   doc.text('a. Employee\'s SSN', 35, startY + 185);
   doc.font('Helvetica').text(employee.ssn || 'XXX-XX-XXXX', 35, startY + 200);
 
-  // Right Column (Figures)
-  const col2 = 300;
-  
   // Box 1: Wages
+  const col2 = 300;
   doc.font('Helvetica-Bold');
   doc.rect(col2, startY, 130, 40).stroke();
   doc.text('1 Wages, tips, other', col2 + 5, startY + 5);
@@ -133,7 +133,7 @@ async function generate1099(employee, year, stats, res) {
   doc.text('1 Nonemployee compensation', col2 + 5, startY + 5);
   doc.font('Courier-Bold').fontSize(14).text('$' + fmt(stats.wages), col2 + 5, startY + 25);
 
-  // Box 4: Federal Tax Withheld (Usually 0 for 1099)
+  // Box 4: Federal Tax Withheld
   doc.font('Helvetica-Bold').fontSize(10);
   doc.rect(col2, startY + 60, 200, 50).stroke();
   doc.text('4 Federal income tax withheld', col2 + 5, startY + 65);
@@ -163,11 +163,9 @@ router.get('/w2/:employeeId/:year', requireAuth(['admin', 'employer', 'employee'
     const start = new Date(`${year}-01-01`);
     const end = new Date(`${Number(year) + 1}-01-01`);
 
-    // 1. Get Employee
     const emp = await Employee.findById(employeeId);
     if (!emp) return res.status(404).send("Employee not found");
 
-    // 2. Aggregate Data
     const stats = await PayrollRun.aggregate([
       { 
         $match: { 
@@ -207,7 +205,6 @@ router.get('/1099/:employeeId/:year', requireAuth(['admin', 'employer', 'employe
     const emp = await Employee.findById(employeeId);
     if (!emp) return res.status(404).send("Contractor not found");
 
-    // For contractors, we typically just care about Gross Pay
     const stats = await PayrollRun.aggregate([
       { 
         $match: { 
@@ -219,7 +216,6 @@ router.get('/1099/:employeeId/:year', requireAuth(['admin', 'employer', 'employe
         $group: {
           _id: null,
           wages: { $sum: "$grossPay" },
-          // Backup withholding only
           fed: { $sum: "$federalIncomeTax" },
           state: { $sum: "$stateIncomeTax" }
         }
