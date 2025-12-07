@@ -28,6 +28,8 @@ const allowedOrigins = [
   'https://nwfpayroll.com',
   'http://localhost:5500',
   'http://127.0.0.1:5500',
+  // ✅ ADDED YOUR GITHUB PAGES FRONTEND URL HERE:
+  'https://payrollpro-backend.github.io/nwf-payroll-backend',
 ];
 
 app.use(
