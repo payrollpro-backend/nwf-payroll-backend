@@ -119,7 +119,8 @@ router.get('/employers', async (req, res) => {
       .select('-passwordHash')
       .sort({ createdAt: -1 });
 
-    res.json({ employers });
+    // ✅ FIX: Send array directly so frontend .forEach() works
+    res.json(employers);
   } catch (err) {
     console.error('GET /api/admin/employers error:', err);
     res.status(500).json({ error: 'Failed to fetch employers' });
@@ -127,7 +128,21 @@ router.get('/employers', async (req, res) => {
 });
 
 /**
- * ✅ NEW: PATCH /api/admin/employers/:id
+ * GET /api/admin/stats
+ * Helper for Admin Dashboard Counters
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const empCount = await Employee.countDocuments({ role: 'employee' });
+        const companyCount = await Employee.countDocuments({ role: 'employer' });
+        res.json({ employees: empCount, companies: companyCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+/**
+ * PATCH /api/admin/employers/:id
  * Admin updates an existing employer
  */
 router.patch('/employers/:id', async (req, res) => {
@@ -160,7 +175,7 @@ router.patch('/employers/:id', async (req, res) => {
 });
 
 /**
- * ✅ NEW: DELETE /api/admin/employers/:id
+ * DELETE /api/admin/employers/:id
  * Admin deletes an employer
  */
 router.delete('/employers/:id', async (req, res) => {
@@ -173,9 +188,6 @@ router.delete('/employers/:id', async (req, res) => {
       return res.status(404).json({ error: 'Employer not found' });
     }
     
-    // Optional: You could delete associated data here if needed
-    // await Paystub.deleteMany({ employer: req.params.id });
-
     res.json({ message: 'Employer deleted successfully' });
   } catch (err) {
     console.error('DELETE /api/admin/employers error:', err);
