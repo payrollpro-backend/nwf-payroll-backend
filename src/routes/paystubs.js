@@ -44,13 +44,18 @@ async function generateSinglePagePdf(paystub, res) {
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 30 });
   
-  // --- FILENAME LOGIC (MM-DD-YYYY-Last6ID) ---
+  // --- ✅ FILENAME LOGIC (MM-DD-YYYY-Last6ID) ---
   const pDate = new Date(paystub.payDate);
-  const dateStr = `${String(pDate.getMonth() + 1).padStart(2, '0')}-${String(pDate.getDate()).padStart(2, '0')}-${pDate.getFullYear()}`;
+  // Ensure we get valid date parts even if date is messy
+  const safeMonth = String((!isNaN(pDate.getMonth()) ? pDate.getMonth() : new Date().getMonth()) + 1).padStart(2, '0');
+  const safeDay = String(!isNaN(pDate.getDate()) ? pDate.getDate() : new Date().getDate()).padStart(2, '0');
+  const safeYear = !isNaN(pDate.getFullYear()) ? pDate.getFullYear() : new Date().getFullYear();
+  
+  const dateStr = `${safeMonth}-${safeDay}-${safeYear}`;
   
   const emp = paystub.employee || {};
   const rawId = emp.externalEmployeeId || emp._id.toString();
-  const shortId = rawId.slice(-6);
+  const shortId = rawId.slice(-6); // Last 6 characters
   
   const finalFileName = `paystub-${dateStr}-${shortId}.pdf`;
 
@@ -81,7 +86,7 @@ async function generateSinglePagePdf(paystub, res) {
   const empName = `${emp.lastName || ''}, ${emp.firstName || ''}`.toUpperCase();
   const empAddr1 = (emp.address?.line1 || "").toUpperCase();
   const empAddr2 = `${emp.address?.city || ''}, ${emp.address?.state || ''} ${emp.address?.zip || ''}`.toUpperCase();
-  const empIdVisual = emp.externalEmployeeId || `ID:${emp._id.toString().slice(-6)}`;
+  const empIdVisual = emp.externalEmployeeId || `ID:xxxxxxx${shortId}`;
 
   const employer = paystub.employer || {};
   const coName = (employer.companyName || emp.companyName || "NSE MANAGEMENT INC").toUpperCase();
@@ -103,70 +108,67 @@ async function generateSinglePagePdf(paystub, res) {
   // ======================================================
   function drawStub(startY) {
     // 1. COMPANY HEADER (Top Left)
-    doc.font('Helvetica-Bold').fontSize(12).text(coName, 30, startY);
-    doc.font('Helvetica').fontSize(9).text(coAddr1, 30, startY + 15);
-    doc.text(coAddr2, 30, startY + 27);
+    doc.font('Helvetica-Bold').fontSize(14).text(coName, 30, startY);
+    doc.font('Helvetica').fontSize(10).text(coAddr1, 30, startY + 18);
+    doc.text(coAddr2, 30, startY + 30);
 
     // 2. NWF LOGO TEXT (Top Right)
-    doc.font('Helvetica-BoldOblique').fontSize(11).text('NWF PAYROLL SERVICES', 400, startY, { align: 'right' });
-    doc.font('Helvetica').fontSize(5).text('PAYROLL FOR SMALL BUSINESSES & SELF-EMPLOYED', 400, startY + 12, { align: 'right' });
+    doc.font('Helvetica-BoldOblique').fontSize(12).text('NWF PAYROLL SERVICES', 400, startY, { align: 'right' });
+    doc.font('Helvetica').fontSize(6).text('PAYROLL FOR SMALL BUSINESSES & SELF-EMPLOYED', 400, startY + 14, { align: 'right' });
 
     // 3. DATES (Right Side)
     const dateX = 420;
-    const dateY = startY + 35;
-    doc.font('Helvetica').fontSize(8);
+    const dateY = startY + 40;
+    doc.font('Helvetica').fontSize(9);
     doc.text('Check Date:', dateX, dateY);           doc.text(checkDate, 500, dateY, { align: 'right' });
-    doc.text('Pay Period Beginning:', dateX, dateY + 10); doc.text(pStart, 500, dateY + 10, { align: 'right' });
-    doc.text('Pay Period Ending:', dateX, dateY + 20);    doc.text(pEnd, 500, dateY + 20, { align: 'right' });
+    doc.text('Pay Period Beginning:', dateX, dateY + 12); doc.text(pStart, 500, dateY + 12, { align: 'right' });
+    doc.text('Pay Period Ending:', dateX, dateY + 24);    doc.text(pEnd, 500, dateY + 24, { align: 'right' });
 
     // 4. EMPLOYEE INFO
-    const empY = startY + 80;
-    // Left: "EMPLOYEE" Label & Name
-    doc.font('Helvetica-Bold').fontSize(8).text('EMPLOYEE', 30, empY);
-    doc.font('Helvetica').text(empName, 30, empY + 10);
-    doc.text(`Employee ID:${empIdVisual}`, 30, empY + 20);
+    const empY = startY + 90;
+    // Left Side Info
+    doc.font('Helvetica-Bold').fontSize(9).text('EMPLOYEE', 30, empY);
+    doc.font('Helvetica').text(empName, 30, empY + 12);
+    doc.text(`Employee ID:${empIdVisual}`, 30, empY + 24);
 
-    // Right: Name & Address (Large)
-    doc.font('Helvetica-Bold').fontSize(11).text(empName, 350, empY - 10);
-    doc.font('Helvetica').fontSize(9).text(empAddr1, 350, empY + 4);
-    doc.text(empAddr2, 350, empY + 16);
+    // Right Side Info (Center-ish)
+    const midX = 360; 
+    doc.font('Helvetica-Bold').fontSize(12).text(empName, midX, empY);
+    doc.font('Helvetica').fontSize(10).text(empAddr1, midX, empY + 15);
+    doc.text(empAddr2, midX, empY + 28);
 
-    // 5. TABLES (Adjusted Fonts for Clean Look)
-    const tableY = startY + 130;
+    // 5. TABLES
+    const tableY = startY + 140;
     
     // -- EARNINGS (Left) --
-    doc.font('Helvetica').fontSize(8);
-    // Headers
+    doc.font('Helvetica').fontSize(9);
     doc.text('Earnings', 30, tableY);
     doc.text('Hours', 100, tableY);
     doc.text('Rate', 150, tableY);
     doc.text('Current', 200, tableY, { align: 'right', width: 60 });
     doc.text('YTD', 280, tableY, { align: 'right', width: 60 });
-    doc.moveTo(30, tableY + 10).lineTo(340, tableY + 10).stroke();
+    doc.moveTo(30, tableY + 12).lineTo(340, tableY + 12).stroke();
 
-    // Row 1: Regular
-    let ey = tableY + 16;
+    // Data Row
+    let ey = tableY + 18;
     doc.text('Regular', 30, ey);
     doc.text('80.00', 100, ey);
     doc.text(fmt(gross), 200, ey, { align: 'right', width: 60 });
     doc.text(fmt(ytdGross), 280, ey, { align: 'right', width: 60 });
 
-    // -- DEDUCTIONS (Right - FIXED SPACING) --
-    const rightStart = 360; 
-    
-    // Headers
+    // -- DEDUCTIONS (Right) --
+    const rightStart = 360;
     doc.text('Deductions From Gross:', rightStart, tableY);
     doc.text('Current', 480, tableY, { align: 'right', width: 60 });
-    doc.text('YTD', 550, tableY, { align: 'right', width: 60 }); 
-    doc.moveTo(rightStart, tableY + 10).lineTo(610, tableY + 10).stroke();
+    doc.text('YTD', 550, tableY, { align: 'right', width: 60 });
+    doc.moveTo(rightStart, tableY + 12).lineTo(610, tableY + 12).stroke();
 
-    // Rows
-    let dy = tableY + 16;
+    let dy = tableY + 18;
     // Gross Row
     doc.text('Gross', rightStart, dy);
     doc.text(fmt(gross), 480, dy, { align: 'right', width: 60 });
     doc.text(fmt(ytdGross), 550, dy, { align: 'right', width: 60 });
-    dy += 10;
+    dy += 12;
 
     const taxRows = [
         { l: 'Federal Income Tax', c: fedVal, y: ytdFed },
@@ -179,19 +181,18 @@ async function generateSinglePagePdf(paystub, res) {
         doc.text(t.l, rightStart, dy);
         doc.text(`(${fmt(t.c)})`, 480, dy, { align: 'right', width: 60 });
         doc.text(`(${fmt(t.y)})`, 550, dy, { align: 'right', width: 60 });
-        dy += 10;
+        dy += 12;
     });
 
     // 6. NET PAY
     const netY = dy + 20;
-    doc.font('Helvetica-Bold').fontSize(10);
+    doc.font('Helvetica-Bold').fontSize(11);
     doc.text('Net Pay:', rightStart, netY);
-    
-    doc.fontSize(11);
+    doc.fontSize(12);
     doc.text('$', 460, netY);
     doc.text(fmt(net), 480, netY, { align: 'right', width: 60 });
     
-    // Calculate and display YTD Net properly
+    // YTD Net
     const ytdNet = ytdGross - (ytdFed+ytdSS+ytdMed+ytdState);
     doc.text(fmt(ytdNet), 550, netY, { align: 'right', width: 60 });
   }
@@ -201,21 +202,21 @@ async function generateSinglePagePdf(paystub, res) {
   // 1. Top Stub
   drawStub(30);
 
-  // 2. Middle Gradient Bar (The Green Separator)
+  // 2. Middle Green Bar
   const barY = 280;
-  doc.rect(0, barY, 612, 60).fillOpacity(0.5).fill('#3d7c5b'); // Greenish bar
-  doc.fillOpacity(1).fillColor('black'); // Reset
+  doc.rect(0, barY, 612, 50).fillOpacity(0.5).fill('#3d7c5b'); 
+  doc.fillOpacity(1).fillColor('black'); 
 
-  // 3. Bottom Stub (Exact copy)
+  // 3. Bottom Stub
   drawStub(360);
 
-  // 4. Verification Footer (Bottom Center)
-  const footerY = 720;
+  // 4. Verification Footer
+  const footerY = 700;
   doc.font('Courier').fontSize(8).text('Verification', 280, footerY);
   doc.text(`Code: ${verifyCode}`, 280, footerY + 10);
   doc.text(`Verify online at: ${verifyUrl}`, 280, footerY + 20);
   
-  // ✅ Removed Vertical Sidebar Code
+  // ✅ VERTICAL TEXT REMOVED
 
   doc.end();
 }
@@ -224,7 +225,6 @@ async function generateSinglePagePdf(paystub, res) {
 router.get('/', async (req, res) => { try { const paystubs = await Paystub.find().populate('employee').sort({ payDate: -1 }); res.json(paystubs); } catch (err) { res.status(500).json({ error: err.message }); } });
 router.get('/by-payroll/:runId', async (req, res) => { try { const stub = await Paystub.findOne({ payrollRun: req.params.runId }).populate('employee'); res.json(stub || {}); } catch (err) { res.status(500).json({ error: err.message }); } });
 
-// PDF Route
 router.get('/:id/pdf', async (req, res) => {
   try {
     const paystub = await Paystub.findById(req.params.id)
