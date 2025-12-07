@@ -6,19 +6,18 @@ const morgan = require('morgan');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 
+const verifyRoutes = require('./routes/verify');
 const Employee = require('./models/Employee');
 
-// ⬇️ ROUTE IMPORTS (Declared exactly once)
+// ⬇️ ROUTE IMPORTS
 const authRoutes = require('./routes/auth');
 const employerRoutes = require('./routes/employers');       
 const employersMeRoutes = require('./routes/employersMe');  
 const employeeRoutes = require('./routes/employees');
-const employeesMeRoutes = require('./routes/employeesMe'); 
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
-const adminRoutes = require('./routes/admin');
-const verifyRoutes = require('./routes/verify'); // ✅ Loaded once here
-const taxformsRoutes = require('./routes/taxforms');
+const adminRoutes = require('./routes/admin');              
+
 
 const app = express();
 
@@ -28,8 +27,6 @@ const allowedOrigins = [
   'https://nwfpayroll.com',
   'http://localhost:5500',
   'http://127.0.0.1:5500',
-  // ✅ ADDED YOUR GITHUB PAGES FRONTEND URL HERE:
-  'https://payrollpro-backend.github.io/nwf-payroll-backend',
 ];
 
 app.use(
@@ -61,30 +58,21 @@ app.get('/', (req, res) => {
 // ---------- ROUTES ----------
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-
-// ✅ EMPLOYER ROUTES (Order matters: 'Me' before 'ID')
-app.use('/api/employers', employersMeRoutes);   
 app.use('/api/employers', employerRoutes);      
-
-// ✅ EMPLOYEE ROUTES
-app.use('/api/employees/me', employeesMeRoutes); // Employee Dashboard
-app.use('/api/employees', employeeRoutes);       // Admin Management
-
-// ✅ PAYROLL & VERIFICATION
+app.use('/api/employers', employersMeRoutes);   
+app.use('/api/employees', employeeRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
 
-// ✅ TAXFORMS & W2 
-app.use('/api/taxforms', taxformsRoutes);
-
-// ---------- SEEDERS ----------
+// ---------- DEFAULT ADMIN SEEDER ----------
 async function ensureDefaultAdmin() {
   const email = process.env.DEFAULT_ADMIN_EMAIL || 'admin@nwfpayroll.com';
   const password = process.env.DEFAULT_ADMIN_PASSWORD || 'StrongPass123!';
 
   const existing = await Employee.findOne({ email });
   if (existing) {
+    // Ensure admin has a unique ID if missing
     if (!existing.externalEmployeeId) {
         existing.externalEmployeeId = 'ADMIN-001';
         await existing.save();
@@ -94,17 +82,20 @@ async function ensureDefaultAdmin() {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
+
   await Employee.create({
     firstName: 'NWF',
     lastName: 'Admin',
     email,
     passwordHash,
     role: 'admin',
-    externalEmployeeId: 'ADMIN-001'
+    externalEmployeeId: 'ADMIN-001' // ✅ FIXED: Explicit ID to prevent duplicate error
   });
+
   console.log('✅ Created default admin:', email);
 }
 
+// ---------- DEFAULT EMPLOYER SEEDER ----------
 async function ensureDefaultEmployer() {
   const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
   const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
@@ -119,12 +110,14 @@ async function ensureDefaultEmployer() {
       email,
       passwordHash,
       role: 'employer',
-      externalEmployeeId: 'EMPLOYER-001'
+      externalEmployeeId: 'EMPLOYER-001' // ✅ FIXED: Explicit ID to prevent duplicate error
     });
+
     console.log('✅ Created default employer:', email);
     return;
   }
 
+  // Ensure role and ID are set correctly if existing
   let changed = false;
   if (employer.role !== 'employer') {
       employer.role = 'employer';
@@ -155,16 +148,11 @@ mongoose
   .then(async () => {
     console.log('✅ Connected to MongoDB');
 
-    // Drop old bad index if exists
-    try {
-       await mongoose.connection.collection('employees').dropIndex('externalEmployeeId_1');
-    } catch (e) {}
-
     try {
         await ensureDefaultAdmin();
         await ensureDefaultEmployer();
     } catch (seedErr) {
-        console.error("⚠️ Seeding Error (Ignored):", seedErr.message);
+        console.error("⚠️ Seeding Error (Ignored to keep server alive):", seedErr.message);
     }
 
     app.listen(PORT, () => {
