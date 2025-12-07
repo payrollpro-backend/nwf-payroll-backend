@@ -17,7 +17,8 @@ const employeeRoutes = require('./routes/employees');
 const employeesMeRoutes = require('./routes/employeesMe'); // Added this
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
-const adminRoutes = require('./routes/admin');              
+const adminRoutes = require('./routes/admin');  
+const verifyRoutes = require('./routes/verify');
 
 const app = express();
 
