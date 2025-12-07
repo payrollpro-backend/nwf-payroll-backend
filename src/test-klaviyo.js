@@ -1,62 +1,70 @@
 // test-klaviyo.js
 const axios = require('axios');
 
-// ⚠️ PASTE YOUR REAL "pk_..." KEY HERE
-const PRIVATE_KEY = 'pk_8aa4622a920b89b233790944bbb639c87d'; 
+// ⚠️ REPLACE THIS WITH YOUR REAL PRIVATE KEY (starts with pk_)
+const API_KEY = "pk_8aa4622a920b89b233790944bbb639c87d"; 
 
 async function runTest() {
-  console.log("🚀 Attempting to send event to Klaviyo...");
+    console.log("🚀 Starting Klaviyo Connection Test...");
 
-  const options = {
-    method: 'POST',
-    url: 'https://a.klaviyo.com/api/events/',
-    headers: {
-      'Authorization': `Klaviyo-API-Key ${PRIVATE_KEY}`,
-      'accept': 'application/vnd.api+json',
-      'content-type': 'application/vnd.api+json',
-      'revision': '2024-02-15'
-    },
-    data: {
-      data: {
-        type: 'event',
-        attributes: {
-          profile: {
-            email: 'test_admin_trigger@example.com',
-            first_name: 'Test',
-            last_name: 'User'
-          },
-          metric: {
+    if (!API_KEY || !API_KEY.startsWith('pk_')) {
+        console.error("❌ ERROR: Invalid API Key. It must start with 'pk_'.");
+        return;
+    }
+
+    try {
+        const payload = {
             data: {
-              type: 'metric',
-              attributes: {
-                name: 'NWF Account Created'
-              }
+                type: 'event',
+                attributes: {
+                    profile: {
+                        email: "test.employee@example.com",
+                        first_name: "Test",
+                        last_name: "User"
+                    },
+                    metric: {
+                        data: {
+                            type: 'metric',
+                            attributes: {
+                                name: "Employee Invited" // This is the metric we are forcing
+                            }
+                        }
+                    },
+                    properties: {
+                        action: "Test Run",
+                        invite_link: "https://nwfpayroll.com/test-link"
+                    }
+                }
             }
-          },
-          properties: {
-            TemporaryPassword: 'TestPass123!',
-            LoginURL: 'https://www.nwfpayroll.com/employer-login.html',
-            Role: 'employer',
-            Action: 'Test Script'
-          }
-        }
-      }
-    }
-  };
+        };
 
-  try {
-    const res = await axios(options);
-    console.log("✅ SUCCESS! Status Code:", res.status);
-    console.log("🎉 Go check your Klaviyo Metrics list now!");
-  } catch (error) {
-    console.error("❌ FAILED!");
-    if (error.response) {
-      console.error("Status:", error.response.status); // 401 = Bad Key, 400 = Bad Data
-      console.error("Reason:", JSON.stringify(error.response.data, null, 2));
-    } else {
-      console.error("Error:", error.message);
+        console.log("📨 Sending payload to Klaviyo...");
+
+        const res = await axios.post(
+            'https://a.klaviyo.com/api/events/',
+            payload,
+            {
+                headers: {
+                    'Authorization': `Klaviyo-API-Key ${API_KEY}`,
+                    'accept': 'application/vnd.api+json',
+                    'content-type': 'application/vnd.api+json',
+                    'revision': '2024-02-15'
+                }
+            }
+        );
+
+        console.log("✅ SUCCESS! Klaviyo responded with Status:", res.status);
+        console.log("👉 Go to Klaviyo > Flows > Create Flow > Choose 'Employee Invited' metric.");
+
+    } catch (error) {
+        console.error("❌ FAILED!");
+        if (error.response) {
+            console.error("Status:", error.response.status);
+            console.error("Reason:", JSON.stringify(error.response.data, null, 2));
+        } else {
+            console.error("Error:", error.message);
+        }
     }
-  }
 }
 
 runTest();
