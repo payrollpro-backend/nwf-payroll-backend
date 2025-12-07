@@ -14,7 +14,15 @@ try {
 
 // --- HELPERS ---
 const fmt = (n) => (typeof n === 'number' ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00');
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : new Date().toLocaleDateString();
+
+// Safe Date Formatter
+const fmtDate = (d) => {
+    if (!d) return new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const dateObj = new Date(d);
+    return isNaN(dateObj.getTime()) 
+        ? new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) 
+        : dateObj.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+};
 
 // --- TAX CALCULATOR FALLBACK ---
 function calculateGaTaxes(gross) {
@@ -30,19 +38,28 @@ function calculateGaTaxes(gross) {
   };
 }
 
-// --- PDF GENERATOR (MATCHING NWF SAMPLE) ---
+// --- PDF GENERATOR ---
 async function generateSinglePagePdf(paystub, res) {
   if (!PDFDocument) throw new Error("PDFKit library missing.");
 
   const doc = new PDFDocument({ size: 'LETTER', margin: 30 });
   
+  // --- FILENAME LOGIC (MM-DD-YYYY-Last6ID) ---
+  const pDate = new Date(paystub.payDate);
+  const dateStr = `${String(pDate.getMonth() + 1).padStart(2, '0')}-${String(pDate.getDate()).padStart(2, '0')}-${pDate.getFullYear()}`;
+  
+  const emp = paystub.employee || {};
+  const rawId = emp.externalEmployeeId || emp._id.toString();
+  const shortId = rawId.slice(-6);
+  
+  const finalFileName = `paystub-${dateStr}-${shortId}.pdf`;
+
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="paystub-${paystub._id}.pdf"`);
+  res.setHeader('Content-Disposition', `inline; filename="${finalFileName}"`);
   
   doc.pipe(res);
 
   // --- DATA PREP ---
-  const emp = paystub.employee || {};
   const gross = paystub.grossPay || 0;
   const taxes = calculateGaTaxes(gross);
   const net = paystub.netPay || taxes.net;
@@ -64,11 +81,13 @@ async function generateSinglePagePdf(paystub, res) {
   const empName = `${emp.lastName || ''}, ${emp.firstName || ''}`.toUpperCase();
   const empAddr1 = (emp.address?.line1 || "").toUpperCase();
   const empAddr2 = `${emp.address?.city || ''}, ${emp.address?.state || ''} ${emp.address?.zip || ''}`.toUpperCase();
-  const empId = emp.externalEmployeeId || `xxxxxxx${emp._id.toString().slice(-6)}`;
+  const empIdVisual = emp.externalEmployeeId || `ID:${emp._id.toString().slice(-6)}`;
 
-  const coName = (paystub.employer?.companyName || "NSE MANAGEMENT INC").toUpperCase();
-  const coAddr1 = "4711 NUTMEG WAY SW"; 
-  const coAddr2 = "LILBURN, GA 30047";
+  const employer = paystub.employer || {};
+  const coName = (employer.companyName || emp.companyName || "NSE MANAGEMENT INC").toUpperCase();
+  const empAddrData = employer.address || {};
+  const coAddr1 = (empAddrData.line1 || "4711 NUTMEG WAY SW").toUpperCase();
+  const coAddr2 = `${empAddrData.city || 'LILBURN'}, ${empAddrData.state || 'GA'} ${empAddrData.zip || '30047'}`.toUpperCase();
 
   // Dates
   const checkDate = fmtDate(paystub.payDate);
@@ -77,77 +96,77 @@ async function generateSinglePagePdf(paystub, res) {
 
   // Verification
   const verifyCode = paystub.verificationCode || "PENDING";
-  const verifyUrl = "https://nwfpayroll.com/verify.html";
+  const verifyUrl = "https://nwfpayroll.com/verify";
 
   // ======================================================
-  // DRAWING FUNCTION (Renders one stub)
+  // DRAWING FUNCTION
   // ======================================================
   function drawStub(startY) {
     // 1. COMPANY HEADER (Top Left)
-    doc.font('Helvetica-Bold').fontSize(14).text(coName, 30, startY);
-    doc.font('Helvetica').fontSize(10).text(coAddr1, 30, startY + 18);
-    doc.text(coAddr2, 30, startY + 30);
+    doc.font('Helvetica-Bold').fontSize(12).text(coName, 30, startY);
+    doc.font('Helvetica').fontSize(9).text(coAddr1, 30, startY + 15);
+    doc.text(coAddr2, 30, startY + 27);
 
     // 2. NWF LOGO TEXT (Top Right)
-    doc.font('Helvetica-BoldOblique').fontSize(12).text('NWF PAYROLL SERVICES', 400, startY, { align: 'right' });
-    doc.font('Helvetica').fontSize(6).text('PAYROLL FOR SMALL BUSINESSES & SELF-EMPLOYED', 400, startY + 14, { align: 'right' });
+    doc.font('Helvetica-BoldOblique').fontSize(11).text('NWF PAYROLL SERVICES', 400, startY, { align: 'right' });
+    doc.font('Helvetica').fontSize(5).text('PAYROLL FOR SMALL BUSINESSES & SELF-EMPLOYED', 400, startY + 12, { align: 'right' });
 
     // 3. DATES (Right Side)
-    const dateX = 400;
-    const dateY = startY + 40;
-    doc.font('Helvetica').fontSize(9);
+    const dateX = 420;
+    const dateY = startY + 35;
+    doc.font('Helvetica').fontSize(8);
     doc.text('Check Date:', dateX, dateY);           doc.text(checkDate, 500, dateY, { align: 'right' });
-    doc.text('Pay Period Beginning:', dateX, dateY + 12); doc.text(pStart, 500, dateY + 12, { align: 'right' });
-    doc.text('Pay Period Ending:', dateX, dateY + 24);    doc.text(pEnd, 500, dateY + 24, { align: 'right' });
+    doc.text('Pay Period Beginning:', dateX, dateY + 10); doc.text(pStart, 500, dateY + 10, { align: 'right' });
+    doc.text('Pay Period Ending:', dateX, dateY + 20);    doc.text(pEnd, 500, dateY + 20, { align: 'right' });
 
     // 4. EMPLOYEE INFO
-    const empY = startY + 90;
+    const empY = startY + 80;
     // Left: "EMPLOYEE" Label & Name
-    doc.font('Helvetica-Bold').fontSize(9).text('EMPLOYEE', 30, empY);
-    doc.font('Helvetica').text(empName, 30, empY + 12);
-    doc.text(`Employee ID:${empId}`, 30, empY + 24);
+    doc.font('Helvetica-Bold').fontSize(8).text('EMPLOYEE', 30, empY);
+    doc.font('Helvetica').text(empName, 30, empY + 10);
+    doc.text(`Employee ID:${empIdVisual}`, 30, empY + 20);
 
     // Right: Name & Address (Large)
-    doc.font('Helvetica-Bold').fontSize(12).text(empName, 350, empY - 10);
-    doc.font('Helvetica').fontSize(11).text(empAddr1, 350, empY + 6);
-    doc.text(empAddr2, 350, empY + 20);
+    doc.font('Helvetica-Bold').fontSize(11).text(empName, 350, empY - 10);
+    doc.font('Helvetica').fontSize(9).text(empAddr1, 350, empY + 4);
+    doc.text(empAddr2, 350, empY + 16);
 
-    // 5. TABLES (Wider Spacing)
-    const tableY = startY + 140;
+    // 5. TABLES (Adjusted Fonts for Clean Look)
+    const tableY = startY + 130;
     
     // -- EARNINGS (Left) --
-    doc.font('Helvetica').fontSize(9);
+    doc.font('Helvetica').fontSize(8);
     // Headers
     doc.text('Earnings', 30, tableY);
     doc.text('Hours', 100, tableY);
     doc.text('Rate', 150, tableY);
     doc.text('Current', 200, tableY, { align: 'right', width: 60 });
     doc.text('YTD', 280, tableY, { align: 'right', width: 60 });
-    doc.moveTo(30, tableY + 12).lineTo(340, tableY + 12).stroke();
+    doc.moveTo(30, tableY + 10).lineTo(340, tableY + 10).stroke();
 
     // Row 1: Regular
-    let ey = tableY + 18;
+    let ey = tableY + 16;
     doc.text('Regular', 30, ey);
     doc.text('80.00', 100, ey);
     doc.text(fmt(gross), 200, ey, { align: 'right', width: 60 });
     doc.text(fmt(ytdGross), 280, ey, { align: 'right', width: 60 });
 
     // -- DEDUCTIONS (Right - FIXED SPACING) --
-    const rightStart = 360; // Moved right slightly
+    const rightStart = 360; 
     
     // Headers
     doc.text('Deductions From Gross:', rightStart, tableY);
     doc.text('Current', 480, tableY, { align: 'right', width: 60 });
-    doc.text('YTD', 550, tableY, { align: 'right', width: 60 }); // Widened box
-    doc.moveTo(rightStart, tableY + 12).lineTo(610, tableY + 12).stroke();
+    doc.text('YTD', 550, tableY, { align: 'right', width: 60 }); 
+    doc.moveTo(rightStart, tableY + 10).lineTo(610, tableY + 10).stroke();
 
     // Rows
-    let dy = tableY + 18;
+    let dy = tableY + 16;
     // Gross Row
     doc.text('Gross', rightStart, dy);
     doc.text(fmt(gross), 480, dy, { align: 'right', width: 60 });
     doc.text(fmt(ytdGross), 550, dy, { align: 'right', width: 60 });
-    dy += 12;
+    dy += 10;
 
     const taxRows = [
         { l: 'Federal Income Tax', c: fedVal, y: ytdFed },
@@ -160,15 +179,15 @@ async function generateSinglePagePdf(paystub, res) {
         doc.text(t.l, rightStart, dy);
         doc.text(`(${fmt(t.c)})`, 480, dy, { align: 'right', width: 60 });
         doc.text(`(${fmt(t.y)})`, 550, dy, { align: 'right', width: 60 });
-        dy += 12;
+        dy += 10;
     });
 
     // 6. NET PAY
     const netY = dy + 20;
-    doc.font('Helvetica-Bold').fontSize(11);
+    doc.font('Helvetica-Bold').fontSize(10);
     doc.text('Net Pay:', rightStart, netY);
     
-    doc.fontSize(12);
+    doc.fontSize(11);
     doc.text('$', 460, netY);
     doc.text(fmt(net), 480, netY, { align: 'right', width: 60 });
     
@@ -196,12 +215,7 @@ async function generateSinglePagePdf(paystub, res) {
   doc.text(`Code: ${verifyCode}`, 280, footerY + 10);
   doc.text(`Verify online at: ${verifyUrl}`, 280, footerY + 20);
   
-  // Vertical Watermark (Restored per sample image)
-  doc.save();
-  doc.rotate(90, { origin: [590, 400] });
-  doc.font('Helvetica').fontSize(6).fillColor('#999');
-  doc.text(`https://nwf-payroll-backend.onrender.com/api/verify-paystub/${paystub._id}`, 590, 400);
-  doc.restore();
+  // ✅ Removed Vertical Sidebar Code
 
   doc.end();
 }
