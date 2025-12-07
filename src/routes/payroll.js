@@ -213,5 +213,46 @@ router.get('/', listRunsHandler);
  * Alias – in case frontend calls /runs
  */
 router.get('/runs', listRunsHandler);
+// src/routes/payroll.js
 
+// ... existing code ...
+
+// ✅ DELETE PAYROLL RUN & PAYSTUB
+router.delete('/:id', async (req, res) => {
+  try {
+    const runId = req.params.id;
+
+    // 1. Delete the Payroll Run
+    const run = await PayrollRun.findByIdAndDelete(runId);
+    if (!run) return res.status(404).json({ error: 'Payroll run not found' });
+
+    // 2. Delete the associated Paystub
+    await Paystub.findOneAndDelete({ payrollRun: runId });
+
+    res.json({ message: 'Payroll run and paystub deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ UPDATE PAYROLL RUN (Edit Numbers)
+router.put('/:id', async (req, res) => {
+  try {
+    const runId = req.params.id;
+    const updates = req.body; // Expects { grossPay, federalIncomeTax, netPay, etc. }
+
+    // 1. Update Payroll Run
+    const run = await PayrollRun.findByIdAndUpdate(runId, updates, { new: true });
+    if (!run) return res.status(404).json({ error: 'Payroll run not found' });
+
+    // 2. Update associated Paystub to match
+    await Paystub.findOneAndUpdate({ payrollRun: runId }, updates);
+
+    res.json(run);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
 module.exports = router;
