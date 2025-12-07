@@ -10,7 +10,7 @@ const LIST_ID_EMPLOYEE = "Xc8Pcv";
 const LIST_ID_EMPLOYER = "VGcWV5";
 
 // ⚠️ YOUR PRIVATE API KEY
-const KLAVIYO_PRIVATE_KEY = "pk_8aa4622a920b89b233790944bbb639c87d"; 
+const KLAVIYO_PRIVATE_KEY = "pk_f936a314bc7ddb3a94c7081063fc3726ad"; 
 
 const KLAVIYO_API_URL = 'https://a.klaviyo.com/api';
 
