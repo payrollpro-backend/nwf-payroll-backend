@@ -9,14 +9,12 @@ const router = express.Router();
 
 /**
  * POST /api/payroll/run
- * Create a single payroll run + paystub for one employee,
- * including YTD calculations based on calendar year + hire date.
+ * Create a single payroll run + paystub for one employee.
  */
 router.post('/run', async (req, res) => {
   try {
     const {
       employeeId,
-      // accept both old and new naming
       payPeriodStart,
       payPeriodEnd,
       periodStart,
@@ -28,42 +26,22 @@ router.post('/run', async (req, res) => {
     } = req.body;
 
     if (!employeeId || !payDate || !grossPay) {
-      return res.status(400).json({
-        error: 'employeeId, payDate, and grossPay are required',
-      });
+      return res.status(400).json({ error: 'employeeId, payDate, and grossPay are required' });
     }
 
     const employee = await Employee.findById(employeeId);
-    if (!employee) {
-      return res.status(404).json({ error: 'Employee not found' });
-    }
+    if (!employee) return res.status(404).json({ error: 'Employee not found' });
 
-    const gross = Number(grossPay);
-    if (Number.isNaN(gross) || gross <= 0) {
-      return res
-        .status(400)
-        .json({ error: 'grossPay must be a positive number' });
-    }
-
-    // Normalize period fields
-    const finalPeriodStart = periodStart || payPeriodStart || null;
-    const finalPeriodEnd = periodEnd || payPeriodEnd || null;
-
-    // ---------- YTD CALCULATION (calendar year, from hire date onward) ----------
+    const gross = parseFloat(grossPay);
     const payDateObj = new Date(payDate);
-    if (Number.isNaN(payDateObj.getTime())) {
-      return res.status(400).json({ error: 'Invalid payDate' });
-    }
-
-    const yearStart = new Date(payDateObj.getFullYear(), 0, 1); // Jan 1
-    const hireDate = employee.hireDate ? new Date(employee.hireDate) : null;
-    const ytdStart = hireDate && hireDate > yearStart ? hireDate : yearStart;
-
+    const yearStart = new Date(payDateObj.getFullYear(), 0, 1);
+    
+    // YTD Calculation
     const prevAgg = await PayrollRun.aggregate([
       {
         $match: {
           employee: employee._id,
-          payDate: { $gte: ytdStart, $lt: payDateObj },
+          payDate: { $gte: yearStart, $lt: payDateObj },
         },
       },
       {
@@ -79,96 +57,56 @@ router.post('/run', async (req, res) => {
         },
       },
     ]);
+    const prev = prevAgg[0] || { gross: 0, net: 0, fed: 0, state: 0, ss: 0, med: 0, taxes: 0 };
 
-    const prev = prevAgg[0] || {
-      gross: 0,
-      net: 0,
-      fed: 0,
-      state: 0,
-      ss: 0,
-      med: 0,
-      taxes: 0,
-    };
+    const taxes = computeTaxesForPaycheck(employee, gross);
 
-    // ---------- TAX & NET PAY USING EMPLOYEE SETTINGS ----------
-    const hours = Number(hoursWorked) || 0;
-
-    // (we still keep the hourlyRate snapshot for reference)
-    const rate =
-      typeof employee.hourlyRate === 'number' && employee.hourlyRate > 0
-        ? employee.hourlyRate
-        : hours > 0
-        ? gross / hours
-        : 0;
-
-    const payFrequency = employee.payFrequency || 'biweekly';
-
-    const {
-      federalIncomeTax,
-      stateIncomeTax,
-      socialSecurity,
-      medicare,
-      totalTaxes,
-      netPay,
-    } = computeTaxesForPaycheck(employee, gross);
-
-    // ---------- Create payroll run with YTD snapshot ----------
+    // 1. Create Payroll Run
     const payrollRun = await PayrollRun.create({
       employee: employee._id,
-      employer: employee.employer || null,
-
+      employer: employee.employer, // Link to Employer
       payType: employee.payType || 'hourly',
-      payFrequency,
-
-      periodStart: finalPeriodStart ? new Date(finalPeriodStart) : null,
-      periodEnd: finalPeriodEnd ? new Date(finalPeriodEnd) : null,
+      payFrequency: employee.payFrequency || 'biweekly',
+      periodStart: periodStart || payPeriodStart,
+      periodEnd: periodEnd || payPeriodEnd,
       payDate: payDateObj,
-      hoursWorked: hours,
-      hourlyRate: rate,
-
+      hoursWorked: hoursWorked || 0,
       grossPay: gross,
-      netPay,
-      federalIncomeTax,
-      stateIncomeTax,
-      socialSecurity,
-      medicare,
-      totalTaxes,
-
-      // YTD = previous runs in year + this run
+      ...taxes, 
+      
+      // YTD
       ytdGross: prev.gross + gross,
-      ytdNet: prev.net + netPay,
-      ytdFederalIncomeTax: prev.fed + federalIncomeTax,
-      ytdStateIncomeTax: prev.state + stateIncomeTax,
-      ytdSocialSecurity: prev.ss + socialSecurity,
-      ytdMedicare: prev.med + medicare,
-      ytdTotalTaxes: prev.taxes + totalTaxes,
-
-      notes,
+      ytdNet: prev.net + taxes.netPay,
+      ytdFederalIncomeTax: prev.fed + taxes.federalIncomeTax,
+      ytdStateIncomeTax: prev.state + taxes.stateIncomeTax,
+      ytdSocialSecurity: prev.ss + taxes.socialSecurity,
+      ytdMedicare: prev.med + taxes.medicare,
+      ytdTotalTaxes: prev.taxes + taxes.totalTaxes,
+      notes
     });
 
-    // ---------- Create Paystub record ----------
-    const baseEmpId =
-      employee.externalEmployeeId ||
-      employee.employeeId ||
-      employee._id.toString();
-
-    const payDatePart = payDateObj.toISOString().slice(0, 10); // YYYY-MM-DD
-    const fileName = `nwf_${baseEmpId}_${payDatePart}.pdf`;
+    // 2. Create Paystub
+    // Generate clean verification code
+    const uniqueCode = Math.random().toString(36).substring(2, 6).toUpperCase() + "-" + 
+                       Math.random().toString(36).substring(2, 6).toUpperCase();
 
     const paystub = await Paystub.create({
       employee: employee._id,
+      employer: employee.employer, // ✅ CRITICAL: Fixes PDF Error
       payrollRun: payrollRun._id,
       payDate: payDateObj,
-      fileName,
+      
+      payPeriodStart: periodStart || payPeriodStart,
+      payPeriodEnd: periodEnd || payPeriodEnd,
+      
+      fileName: `paystub-${employee._id}-${payDateObj.toISOString().split('T')[0]}.pdf`,
+      verificationCode: uniqueCode,
 
+      // Current
       grossPay: gross,
-      netPay,
-      federalIncomeTax,
-      stateIncomeTax,
-      socialSecurity,
-      medicare,
-      totalTaxes,
+      ...taxes,
 
+      // YTD
       ytdGross: payrollRun.ytdGross,
       ytdNet: payrollRun.ytdNet,
       ytdFederalIncomeTax: payrollRun.ytdFederalIncomeTax,
@@ -179,80 +117,41 @@ router.post('/run', async (req, res) => {
     });
 
     res.status(201).json({ payrollRun, paystub });
+
   } catch (err) {
-    console.error('payroll run error:', err);
-    res.status(400).json({ error: err.message });
+    console.error('Run Payroll Error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Shared handler to list payroll runs
- */
-async function listRunsHandler(req, res) {
+// List
+router.get('/', async (req, res) => {
   try {
-    const runs = await PayrollRun.find()
-      .populate('employee')
-      .sort({ createdAt: -1 })
-      .lean();
-
+    const runs = await PayrollRun.find().populate('employee').sort({ createdAt: -1 });
     res.json(runs);
-  } catch (err) {
-    console.error('list payroll runs error:', err);
-    res.status(500).json({ error: err.message });
-  }
-}
-
-/**
- * GET /api/payroll
- * List all payroll runs
- */
-router.get('/', listRunsHandler);
-
-/**
- * GET /api/payroll/runs
- * Alias – in case frontend calls /runs
- */
-router.get('/runs', listRunsHandler);
-// src/routes/payroll.js
-
-// ... existing code ...
-
-// ✅ DELETE PAYROLL RUN & PAYSTUB
-router.delete('/:id', async (req, res) => {
-  try {
-    const runId = req.params.id;
-
-    // 1. Delete the Payroll Run
-    const run = await PayrollRun.findByIdAndDelete(runId);
-    if (!run) return res.status(404).json({ error: 'Payroll run not found' });
-
-    // 2. Delete the associated Paystub
-    await Paystub.findOneAndDelete({ payrollRun: runId });
-
-    res.json({ message: 'Payroll run and paystub deleted successfully' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ✅ UPDATE PAYROLL RUN (Edit Numbers)
+// Update
 router.put('/:id', async (req, res) => {
   try {
     const runId = req.params.id;
-    const updates = req.body; // Expects { grossPay, federalIncomeTax, netPay, etc. }
-
-    // 1. Update Payroll Run
+    const updates = req.body;
     const run = await PayrollRun.findByIdAndUpdate(runId, updates, { new: true });
-    if (!run) return res.status(404).json({ error: 'Payroll run not found' });
-
-    // 2. Update associated Paystub to match
+    if (!run) return res.status(404).json({ error: 'Not found' });
     await Paystub.findOneAndUpdate({ payrollRun: runId }, updates);
-
     res.json(run);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-module.exports = router;
+// Delete
+router.delete('/:id', async (req, res) => {
+  try {
+    const runId = req.params.id;
+    await PayrollRun.findByIdAndDelete(runId);
+    await Paystub.findOneAndDelete({ payrollRun: runId });
+    res.json({ message: 'Deleted' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 module.exports = router;
