@@ -5,11 +5,11 @@ const axios = require('axios');
 // KLAVIYO CONFIGURATION
 // --------------------------------------------------------------------------
 
-// List IDs provided
+// List IDs (Optional, good for segmentation)
 const LIST_ID_EMPLOYEE = "Xc8Pcv";
 const LIST_ID_EMPLOYER = "VGcWV5";
 
-// ⚠️ IMPORTANT: This must be your PRIVATE API Key (starts with pk_...)
+// ⚠️ YOUR PRIVATE API KEY
 const KLAVIYO_PRIVATE_KEY = "pk_8aa4622a920b89b233790944bbb639c87d"; 
 
 const KLAVIYO_API_URL = 'https://a.klaviyo.com/api';
@@ -22,16 +22,14 @@ const headers = {
 };
 
 /**
- * ✅ NEW: Handles sending the Invitation Link to a new employee
- * Trigger this from: POST /api/employees/invite
+ * ✅ NEW: TRIGGER INVITATION FLOW
+ * Called when Employer clicks "Invite" on dashboard.
  */
 async function sendInvite(employee, inviteLink) {
-  if (!KLAVIYO_PRIVATE_KEY) {
-    console.warn("⚠️ Klaviyo Private Key is missing. Invite email skipped.");
-    return false;
-  }
+  if (!KLAVIYO_PRIVATE_KEY) return false;
 
-  const eventName = "Employee Invited"; // <--- Trigger Name for your Klaviyo Flow
+  // This Event Name MUST match what you look for in Klaviyo
+  const eventName = "Employee Invited"; 
 
   try {
     const eventPayload = {
@@ -41,7 +39,12 @@ async function sendInvite(employee, inviteLink) {
           profile: {
             email: employee.email,
             first_name: employee.firstName,
-            last_name: employee.lastName
+            last_name: employee.lastName,
+            properties: {
+               // These update the user's profile in Klaviyo
+               Role: 'employee',
+               Status: 'Invited'
+            }
           },
           metric: {
             data: {
@@ -52,10 +55,10 @@ async function sendInvite(employee, inviteLink) {
             }
           },
           properties: {
-            // These variables are available in your Email Template as {{ event.invite_link }}
+            // ✅ These variables are available in your Email Template
             invite_link: inviteLink,
             pay_type: employee.payType,
-            role: 'employee',
+            company_name: "NWF Payroll Services", 
             action: "Invitation Sent"
           },
           time: new Date().toISOString()
@@ -75,24 +78,19 @@ async function sendInvite(employee, inviteLink) {
 }
 
 /**
- * Handles adding user to the correct list and triggering the Welcome Flow.
- * Used when Admin manually creates a user.
+ * TRIGGER WELCOME FLOW
+ * Called when account is fully created/activated.
  */
 async function sendWelcomeEvent(user, tempPassword) {
   if (!KLAVIYO_PRIVATE_KEY) return false;
 
-  // 1. Determine Logic based on Role
   const isEmployer = user.role === 'employer';
   const targetListId = isEmployer ? LIST_ID_EMPLOYER : LIST_ID_EMPLOYEE;
-  
-  const loginUrl = isEmployer 
-    ? 'https://www.nwfpayroll.com/employer-login.html' 
-    : 'https://www.nwfpayroll.com/employee-login.html';
-
+  const loginUrl = isEmployer ? 'https://nwfpayroll.com/employer-login.html' : 'https://nwfpayroll.com/employee-login.html';
   const eventName = "NWF Account Created"; 
 
   try {
-    // --- STEP 1: Add Profile to Specific List ---
+    // 1. Add to List (Suppress error if already exists)
     const profilePayload = {
       data: {
         type: 'profile-subscription-bulk-create-job',
@@ -100,53 +98,32 @@ async function sendWelcomeEvent(user, tempPassword) {
           list_id: targetListId,
           custom_source: 'NWF Admin Dashboard',
           profiles: {
-            data: [
-              {
-                type: 'profile',
-                attributes: {
-                  email: user.email,
-                  first_name: user.firstName,
-                  last_name: user.lastName,
-                  properties: {
-                    Role: user.role,
-                    Company: user.companyName || 'NWF Payroll'
-                  }
-                }
+            data: [{
+              type: 'profile',
+              attributes: {
+                email: user.email,
+                first_name: user.firstName,
+                last_name: user.lastName,
+                properties: { Role: user.role }
               }
-            ]
+            }]
           }
         }
       }
     };
+    await axios.post(`${KLAVIYO_API_URL}/profile-subscription-bulk-create-jobs/`, profilePayload, { headers }).catch(() => {});
 
-    // Suppress 409 errors (Already subscribed)
-    await axios.post(`${KLAVIYO_API_URL}/profile-subscription-bulk-create-jobs/`, profilePayload, { headers })
-      .catch(err => console.log("Info: Profile list subscription:", err.response?.data?.errors?.[0]?.detail || "Already subscribed"));
-
-
-    // --- STEP 2: Trigger the Event ---
+    // 2. Send Event
     const eventPayload = {
       data: {
         type: 'event',
         attributes: {
-          profile: {
-            email: user.email,
-            first_name: user.firstName,
-            last_name: user.lastName
-          },
-          metric: {
-            data: {
-              type: 'metric',
-              attributes: {
-                name: eventName
-              }
-            }
-          },
+          profile: { email: user.email, first_name: user.firstName, last_name: user.lastName },
+          metric: { data: { type: 'metric', attributes: { name: eventName } } },
           properties: {
             TemporaryPassword: tempPassword,
             LoginURL: loginUrl,
-            Role: user.role,
-            Action: "Account Created"
+            Role: user.role
           },
           time: new Date().toISOString()
         }
@@ -154,15 +131,13 @@ async function sendWelcomeEvent(user, tempPassword) {
     };
 
     await axios.post(`${KLAVIYO_API_URL}/events/`, eventPayload, { headers });
-    
     console.log(`✅ Klaviyo: Triggered '${eventName}' for ${user.email}`);
     return true;
 
   } catch (error) {
-    console.error('❌ Klaviyo Welcome Error:', error.response ? JSON.stringify(error.response.data) : error.message);
+    console.error('❌ Klaviyo Welcome Error:', error.message);
     return false;
   }
 }
 
-// ✅ EXPORT BOTH FUNCTIONS
 module.exports = { sendWelcomeEvent, sendInvite };
