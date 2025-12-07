@@ -14,10 +14,10 @@ const authRoutes = require('./routes/auth');
 const employerRoutes = require('./routes/employers');       
 const employersMeRoutes = require('./routes/employersMe');  
 const employeeRoutes = require('./routes/employees');
+const employeesMeRoutes = require('./routes/employeesMe'); // Added this
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
-const adminRoutes = require('./routes/admin');  
-const employeesMeRoutes = require('./routes/employeesMe');
+const adminRoutes = require('./routes/admin');              
 
 const app = express();
 
@@ -58,13 +58,19 @@ app.get('/', (req, res) => {
 // ---------- ROUTES ----------
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/employers', employerRoutes);      
+
+// ⬇️⬇️⬇️ THE FIX IS HERE ⬇️⬇️⬇️
+// We load the "Me" routes FIRST so "me" isn't mistaken for an ID
 app.use('/api/employers', employersMeRoutes);   
-app.use('/api/employees', employeeRoutes);
+app.use('/api/employers', employerRoutes);      
+// ⬆️⬆️⬆️ -----------------------
+
+app.use('/api/employees/me', employeesMeRoutes); // Employee Dashboard
+app.use('/api/employees', employeeRoutes);       // Admin Management
+
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
-app.use('/api/employees/me', employeesMeRoutes);
 
 // ---------- SEEDERS ----------
 async function ensureDefaultAdmin() {
@@ -143,15 +149,11 @@ mongoose
   .then(async () => {
     console.log('✅ Connected to MongoDB');
 
-    // 1. FIX: Drop the old index that causes duplicate key errors
+    // Drop old bad index if exists
     try {
        await mongoose.connection.collection('employees').dropIndex('externalEmployeeId_1');
-       console.log('✅ FIX: Dropped old duplicate index on externalEmployeeId');
-    } catch (e) {
-       // Index might not exist, which is fine.
-    }
+    } catch (e) {}
 
-    // 2. Run Seeders
     try {
         await ensureDefaultAdmin();
         await ensureDefaultEmployer();
@@ -159,7 +161,6 @@ mongoose
         console.error("⚠️ Seeding Error (Ignored):", seedErr.message);
     }
 
-    // 3. Start Server (Only Once!)
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
     });
