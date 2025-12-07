@@ -6,9 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-/**
- * Helper: ensure the current user is an ADMIN
- */
+// Helper: ensure the current user is an ADMIN
 function ensureAdmin(req, res) {
   if (!req.user) {
     res.status(401).json({ error: 'Not authenticated' });
@@ -24,59 +22,36 @@ function ensureAdmin(req, res) {
 // ✅ All /api/admin/* routes require a valid JWT with role=admin
 router.use(requireAuth(['admin']));
 
-/**
- * Helper: generate a generic / temporary password for new employers
- */
 function generateTempPassword() {
-  const rand = Math.random().toString(36).slice(2, 8); // 6 chars
+  const rand = Math.random().toString(36).slice(2, 8); 
   return `NwfEmp-${rand}!`;
 }
 
-/**
- * POST /api/admin/employers
- * Admin creates a new employer account.
- */
+// POST: Create Employer
 router.post('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
 
   try {
-    const {
-      firstName,
-      lastName,
-      email,
-      companyName,
-      companyEmail,
-      ein,
-      address,
-      documents,
-      customPassword,
-    } = req.body || {};
+    const { firstName, lastName, email, companyName, companyEmail, ein, address, documents, customPassword } = req.body || {};
 
     const normalizedCompanyName = (companyName || '').trim();
     const loginEmail = (email || companyEmail || '').trim().toLowerCase();
 
     if (!normalizedCompanyName || !loginEmail) {
-      return res.status(400).json({
-        error: 'companyName and email/companyEmail are required',
-      });
+      return res.status(400).json({ error: 'companyName and email required' });
     }
-
-    const contactFirstName = firstName || normalizedCompanyName;
-    const contactLastName = lastName || 'Owner';
 
     const existing = await Employee.findOne({ email: loginEmail });
-    if (existing) {
-      return res.status(400).json({ error: 'An account already exists with this email' });
-    }
+    if (existing) return res.status(400).json({ error: 'Account already exists' });
 
     const plainPassword = customPassword || generateTempPassword();
     const passwordHash = await bcrypt.hash(plainPassword, 10);
     const uniqueId = 'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
 
     const employer = await Employee.create({
-      firstName: contactFirstName,
-      lastName: contactLastName,
+      firstName: firstName || normalizedCompanyName,
+      lastName: lastName || 'Owner',
       email: loginEmail,
       passwordHash,
       role: 'employer',
@@ -88,49 +63,33 @@ router.post('/employers', async (req, res) => {
     });
 
     res.status(201).json({
-      employer: {
-        id: employer._id,
-        firstName: employer.firstName,
-        lastName: employer.lastName,
-        email: employer.email,
-        role: employer.role,
-        companyName: employer.companyName,
-        createdAt: employer.createdAt,
-      },
+      employer: { id: employer._id, email: employer.email, companyName: employer.companyName },
       tempPassword: plainPassword,
       message: 'Employer created successfully.',
     });
   } catch (err) {
-    console.error('POST /api/admin/employers error:', err);
-    res.status(500).json({ error: err.message || 'Failed to create employer' });
+    res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * GET /api/admin/employers
- * Returns a list of all users with role="employer"
- */
+// GET: List Employers (Fixed for Dropdown)
 router.get('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
 
   try {
     const employers = await Employee.find({ role: 'employer' })
-      .select('-passwordHash')
-      .sort({ createdAt: -1 });
+      .select('companyName firstName lastName email')
+      .sort({ companyName: 1 });
 
-    // ✅ FIX: Send array directly so frontend .forEach() works
-    res.json(employers);
+    // ✅ FIX: Returns a plain Array so the dropdown works
+    res.json(employers); 
   } catch (err) {
-    console.error('GET /api/admin/employers error:', err);
     res.status(500).json({ error: 'Failed to fetch employers' });
   }
 });
 
-/**
- * GET /api/admin/stats
- * Helper for Admin Dashboard Counters
- */
+// GET: Stats
 router.get('/stats', async (req, res) => {
     try {
         const empCount = await Employee.countDocuments({ role: 'employee' });
@@ -141,56 +100,38 @@ router.get('/stats', async (req, res) => {
     }
 });
 
-/**
- * PATCH /api/admin/employers/:id
- * Admin updates an existing employer
- */
+// PATCH: Update Employer
 router.patch('/employers/:id', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
 
   try {
     const emp = await Employee.findById(req.params.id);
-    if (!emp || emp.role !== 'employer') {
-      return res.status(404).json({ error: 'Employer not found' });
-    }
+    if (!emp || emp.role !== 'employer') return res.status(404).json({ error: 'Not found' });
 
     const b = req.body;
-    
-    // Update fields if provided
     if (b.companyName) emp.companyName = b.companyName;
     if (b.firstName) emp.firstName = b.firstName;
     if (b.lastName) emp.lastName = b.lastName;
     if (b.email) emp.email = b.email;
-    if (b.ein) emp.ein = b.ein;
     if (b.address) emp.address = { ...emp.address, ...b.address };
 
     await emp.save();
-    
     res.json({ message: 'Employer updated', employer: emp });
   } catch (err) {
-    console.error('PATCH /api/admin/employers error:', err);
     res.status(400).json({ error: err.message });
   }
 });
 
-/**
- * DELETE /api/admin/employers/:id
- * Admin deletes an employer
- */
+// DELETE: Employer
 router.delete('/employers/:id', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
 
   try {
-    const emp = await Employee.findByIdAndDelete(req.params.id);
-    if (!emp) {
-      return res.status(404).json({ error: 'Employer not found' });
-    }
-    
+    await Employee.findByIdAndDelete(req.params.id);
     res.json({ message: 'Employer deleted successfully' });
   } catch (err) {
-    console.error('DELETE /api/admin/employers error:', err);
     res.status(500).json({ error: err.message });
   }
 });
