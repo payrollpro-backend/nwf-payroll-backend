@@ -19,7 +19,7 @@ function ensureAdmin(req, res) {
   return req.user;
 }
 
-// ✅ All /api/admin/* routes require a valid JWT with role=admin
+// All /api/admin/* routes require a valid JWT with role=admin
 router.use(requireAuth(['admin']));
 
 function generateTempPassword() {
@@ -27,7 +27,88 @@ function generateTempPassword() {
   return `NwfEmp-${rand}!`;
 }
 
-// POST: Create Employer
+// ==============================================================================
+// ✅ NEW ROUTE: ONBOARD SOLO/SELF-EMPLOYED CLIENT
+// ==============================================================================
+
+router.post('/onboard-solo', async (req, res) => {
+    const adminUser = ensureAdmin(req, res);
+    if (!adminUser) return;
+
+    try {
+        const {
+            email, companyName, businessTaxId, businessAddress, bizRoutingNumber, bizAccountNumber, bizBankName,
+            firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName
+        } = req.body;
+
+        // Basic validation
+        if (!email || !companyName || !businessTaxId || !bizRoutingNumber || !bizAccountNumber || !firstName || !lastName || !payeeRate || !persRoutingNumber || !persAccountNumber) {
+            return res.status(400).json({ error: 'Missing required business, personal, or banking fields.' });
+        }
+
+        const existing = await Employee.findOne({ email });
+        if (existing) {
+            return res.status(400).json({ error: 'Email already registered.' });
+        }
+
+        // 1. Generate Temp Password
+        const tempPassword = generateTempPassword();
+        const passwordHash = await bcrypt.hash(tempPassword, 10);
+        
+        // 2. Create Combined Employer/Employee Record (Solo Client)
+        const newSoloClient = await Employee.create({
+            // Core Identity & Auth
+            email, firstName, lastName, passwordHash, requiresPasswordChange: true,
+            
+            // Roles & Status
+            role: 'employer', // Access the Solo Dashboard
+            isSelfEmployed: true, // Flag for restrictions
+            status: 'active',
+            
+            // Business Info (Employer side)
+            companyName,
+            externalEmployeeId: businessTaxId, // Reusing field for business ID/SSN
+            address: { line1: businessAddress || '' },
+            
+            // Pay Configuration (Employee side)
+            payType: 'salary', // Assume solo income is treated as salary for consistency
+            salaryAmount: payeeRate, 
+            ssn: payeeSSN,
+            filingStatus: filingStatus || 'single',
+
+            // Personal Deposit Account (DEPOSIT TARGET)
+            directDeposit: {
+                bankName: persBankName,
+                routingNumber: persRoutingNumber,
+                accountNumber: persAccountNumber,
+                accountNumberLast4: persAccountNumber.slice(-4),
+                accountType: 'Checking'
+            },
+            
+            // Business Withdrawal Account (FUNDS SOURCE)
+            businessWithdrawalAccount: {
+                bankName: bizBankName,
+                routingNumber: bizRoutingNumber,
+                accountNumber: bizAccountNumber,
+            }
+        });
+
+        // 3. Return temp password and ID to Admin
+        res.status(201).json({ 
+            success: true, 
+            message: "Solo client successfully onboarded.",
+            employerId: newSoloClient._id, 
+            tempPassword: tempPassword 
+        });
+
+    } catch (err) {
+        console.error("Solo Onboarding Error:", err);
+        res.status(500).json({ error: err.message || 'Failed to complete solo client onboarding.' });
+    }
+});
+
+
+// POST: Create Employer (Existing Multi-Employee Logic)
 router.post('/employers', async (req, res) => {
   const adminUser = ensureAdmin(req, res);
   if (!adminUser) return;
@@ -60,6 +141,7 @@ router.post('/employers', async (req, res) => {
       address: address || {},
       documents: documents || [],
       externalEmployeeId: uniqueId,
+      isSelfEmployed: false, // Ensure multi-employee clients are marked false
     });
 
     res.status(201).json({
@@ -82,7 +164,7 @@ router.get('/employers', async (req, res) => {
       .select('companyName firstName lastName email')
       .sort({ companyName: 1 });
 
-    // ✅ FIX: Returns a plain Array so the dropdown works
+    // FIX: Returns a plain Array so the dropdown works
     res.json(employers); 
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch employers' });
@@ -115,6 +197,7 @@ router.patch('/employers/:id', async (req, res) => {
     if (b.lastName) emp.lastName = b.lastName;
     if (b.email) emp.email = b.email;
     if (b.address) emp.address = { ...emp.address, ...b.address };
+    if (b.isSelfEmployed !== undefined) emp.isSelfEmployed = b.isSelfEmployed; // Allow admin to change type
 
     await emp.save();
     res.json({ message: 'Employer updated', employer: emp });
