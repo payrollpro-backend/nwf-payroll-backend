@@ -4,6 +4,7 @@ const Employee = require('../models/Employee');
 const PayrollRun = require('../models/PayrollRun');
 const Paystub = require('../models/Paystub');
 const { computeTaxesForPaycheck } = require('../services/taxCalculator');
+const { requireAuth } = require('../middleware/auth'); // Ensure auth is imported for req.user.id
 
 const router = express.Router();
 
@@ -11,7 +12,7 @@ const router = express.Router();
  * POST /api/payroll/run
  * Create a single payroll run + paystub for one employee.
  */
-router.post('/run', async (req, res) => {
+router.post('/run', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const {
       employeeId,
@@ -30,7 +31,17 @@ router.post('/run', async (req, res) => {
     }
 
     const employee = await Employee.findById(employeeId);
+    const employer = await Employee.findById(req.user.id);
+    
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
+    
+    // ✅ NEW CHECK: Enforce solo payroll for self-employed users
+    if (employer.isSelfEmployed) {
+        if (String(employeeId) !== String(req.user.id)) {
+            return res.status(403).json({ error: "Self-Employed accounts can only run payroll for themselves." });
+        }
+    }
+
 
     const gross = parseFloat(grossPay);
     const payDateObj = new Date(payDate);
@@ -92,7 +103,7 @@ router.post('/run', async (req, res) => {
 
     const paystub = await Paystub.create({
       employee: employee._id,
-      employer: employee.employer, // ✅ CRITICAL: Fixes PDF Error
+      employer: employee.employer, 
       payrollRun: payrollRun._id,
       payDate: payDateObj,
       
