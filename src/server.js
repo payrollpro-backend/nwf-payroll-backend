@@ -14,16 +14,16 @@ const authRoutes = require('./routes/auth');
 const employerRoutes = require('./routes/employers');       
 const employersMeRoutes = require('./routes/employersMe');  
 const employeeRoutes = require('./routes/employees');
-const employeesMeRoutes = require('./routes/employeesMe'); // ✅ MISSING IMPORT
+const employeesMeRoutes = require('./routes/employeesMe'); 
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
 const adminRoutes = require('./routes/admin');
-const taxformsRoutes = require('./routes/taxforms'); // ✅ ADDED TAXFORMS IMPORT
+const taxformsRoutes = require('./routes/taxforms'); 
+const applicationsRoutes = require('./routes/applications'); // ✅ NEW IMPORT
 
 const app = express();
 
 // ---------- CORS ----------
-// ✅ FIXED: Using a more robust regex/logic for development and Render environments.
 const allowedOrigins = [
   'https://www.nwfpayroll.com',
   'https://nwfpayroll.com',
@@ -33,15 +33,10 @@ const allowedOrigins = [
 
 const corsOptions = {
     origin(origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
-        
-        // Allow the explicitly defined origins
         if (allowedOrigins.includes(origin)) {
             return callback(null, true);
         }
-        
-        // Allow any Render preview URL or specific localhost ports
         if (origin.endsWith('.onrender.com') || origin.includes('localhost:') || origin.includes('127.0.0.1:')) {
             return callback(null, true);
         }
@@ -54,7 +49,7 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+app.options('*', cors(corsOptions)); 
 
 app.use(express.json());
 app.use(morgan('dev'));
@@ -71,20 +66,24 @@ app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 
 // EMPLOYER ROUTES
-app.use('/api/employers', employersMeRoutes);    // /api/employers/me/...
-app.use('/api/employers', employerRoutes);       // /api/employers/ID
+app.use('/api/employers', employersMeRoutes);    
+app.use('/api/employers', employerRoutes);       
 
 // EMPLOYEE ROUTES
-app.use('/api/employees/me', employeesMeRoutes); // /api/employees/me/... (Employee Dashboard)
-app.use('/api/employees', employeeRoutes);       // /api/employees/... (Admin Management)
+app.use('/api/employees/me', employeesMeRoutes); 
+app.use('/api/employees', employeeRoutes);       
 
 // PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
 
-// ✅ TAXFORMS ROUTE (Fixes the 404 error)
+// TAXFORMS ROUTE
 app.use('/api/taxforms', taxformsRoutes); 
+
+// ✅ JOB APPLICATIONS ROUTE
+app.use('/api/applications', applicationsRoutes); 
+
 
 // ---------- DEFAULT ADMIN SEEDER ----------
 async function ensureDefaultAdmin() {
@@ -102,7 +101,6 @@ async function ensureDefaultAdmin() {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-
   await Employee.create({
     firstName: 'NWF',
     lastName: 'Admin',
@@ -111,7 +109,6 @@ async function ensureDefaultAdmin() {
     role: 'admin',
     externalEmployeeId: 'ADMIN-001'
   });
-
   console.log('✅ Created default admin:', email);
 }
 
@@ -132,7 +129,6 @@ async function ensureDefaultEmployer() {
       role: 'employer',
       externalEmployeeId: 'EMPLOYER-001'
     });
-
     console.log('✅ Created default employer:', email);
     return;
   }
