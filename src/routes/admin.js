@@ -28,7 +28,7 @@ function generateTempPassword() {
 }
 
 // ==============================================================================
-// ✅ NEW ROUTE: ONBOARD SOLO/SELF-EMPLOYED CLIENT
+// ✅ FINAL ROUTE: ONBOARD SOLO/SELF-EMPLOYED CLIENT
 // ==============================================================================
 
 router.post('/onboard-solo', async (req, res) => {
@@ -37,26 +37,24 @@ router.post('/onboard-solo', async (req, res) => {
 
     try {
         const {
-            email, companyName, businessTaxId, businessAddress, // OLD STRING
-            bizRoutingNumber, bizAccountNumber, bizBankName,
-            firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName
+            email, companyName, businessTaxId, bizRoutingNumber, bizAccountNumber, bizBankName,
+            firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName,
+            // Destructure individual address fields sent by the frontend
+            bizStreet, bizCity, bizState, bizZip 
         } = req.body;
         
-        // ✅ NEW: Destructure and combine address fields from the frontend payload
-        const { bizStreet, bizCity, bizState, bizZip } = req.body;
-        const businessAddressLine = [bizStreet, bizCity, bizState, bizZip].filter(Boolean).join(', ');
 
-
-        // Basic validation: Check the mandatory fields (same as before)
-        if (!email || !companyName || !businessTaxId || !bizRoutingNumber || !bizAccountNumber || !firstName || !lastName || !payeeRate || !persRoutingNumber || !persAccountNumber) {
-            return res.status(400).json({ error: 'Missing required business, personal, or banking fields.' });
+        // ✅ FINAL VALIDATION FIX: Check ALL required fields explicitly
+        if (
+            !email || !companyName || !businessTaxId || 
+            !bizRoutingNumber || !bizAccountNumber || 
+            !firstName || !lastName || !payeeRate || 
+            !persRoutingNumber || !persAccountNumber ||
+            !bizStreet || !bizCity || !bizState || !bizZip // Crucial Address Check
+        ) {
+            return res.status(400).json({ error: 'Missing required fields for business, payee, or banking details. Please fill all fields marked with *.' });
         }
         
-        // Check if address fields are present (assuming street, city, state, zip are passed now)
-        if (!bizStreet || !bizCity || !bizState || !bizZip) {
-             return res.status(400).json({ error: 'Missing required business address fields (street, city, state, zip).' });
-        }
-
         const existing = await Employee.findOne({ email });
         if (existing) {
             return res.status(400).json({ error: 'Email already registered.' });
@@ -74,12 +72,12 @@ router.post('/onboard-solo', async (req, res) => {
             // Roles & Status
             role: 'employer', 
             isSelfEmployed: true, 
-            status: 'active',
+            status: 'active', 
             
             // Business Info (Employer side)
             companyName,
             externalEmployeeId: businessTaxId,
-            // ✅ FIX: Using the structured address fields
+            // Address object for Mongoose
             address: { 
                 line1: bizStreet,
                 city: bizCity,
