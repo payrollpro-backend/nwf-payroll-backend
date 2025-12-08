@@ -7,13 +7,16 @@ const EmployeeSchema = new Schema(
     // Link to employer (company)
     employer: { type: Schema.Types.ObjectId, ref: 'Employer', default: null },
 
+    // ✅ NEW FIELD: Flag to enforce single-user payroll restrictions
+    isSelfEmployed: { type: Boolean, default: false },
+
     // ----------------------------------------------------------------
     // SELF-ONBOARDING FIELDS
     // ----------------------------------------------------------------
     invitationToken: { type: String, default: null },
     onboardingCompleted: { type: Boolean, default: false },
     
-    // ✅ NEW: Force password change flag
+    // Force password change flag
     requiresPasswordChange: { type: Boolean, default: false },
 
     status: {
