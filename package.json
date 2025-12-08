@@ -4,7 +4,7 @@
   "description": "NWF Payroll backend with admin+employee auth and ADP-style paystub PDFs.",
   "main": "src/server.js",
   "scripts": {
-    "start": "NODE_PATH=./src node src/server.js",
+    "start": "node src/server.js",
     "dev": "nodemon src/server.js"
   },
   "dependencies": {
