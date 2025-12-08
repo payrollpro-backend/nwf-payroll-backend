@@ -35,8 +35,9 @@ router.post('/run', requireAuth(['admin', 'employer']), async (req, res) => {
     
     if (!employee) return res.status(404).json({ error: 'Employee not found' });
     
-    // ✅ NEW CHECK: Enforce solo payroll for self-employed users
-    if (employer.isSelfEmployed) {
+    // ✅ CHECK: Enforce solo payroll for self-employed users
+    if (employer && employer.isSelfEmployed) {
+        // If the logged-in user (employer) is self-employed, they can only pay themselves (employeeId must match req.user.id)
         if (String(employeeId) !== String(req.user.id)) {
             return res.status(403).json({ error: "Self-Employed accounts can only run payroll for themselves." });
         }
