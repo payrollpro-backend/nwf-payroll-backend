@@ -37,13 +37,24 @@ router.post('/onboard-solo', async (req, res) => {
 
     try {
         const {
-            email, companyName, businessTaxId, businessAddress, bizRoutingNumber, bizAccountNumber, bizBankName,
+            email, companyName, businessTaxId, businessAddress, // OLD STRING
+            bizRoutingNumber, bizAccountNumber, bizBankName,
             firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName
         } = req.body;
+        
+        // ✅ NEW: Destructure and combine address fields from the frontend payload
+        const { bizStreet, bizCity, bizState, bizZip } = req.body;
+        const businessAddressLine = [bizStreet, bizCity, bizState, bizZip].filter(Boolean).join(', ');
 
-        // Basic validation
+
+        // Basic validation: Check the mandatory fields (same as before)
         if (!email || !companyName || !businessTaxId || !bizRoutingNumber || !bizAccountNumber || !firstName || !lastName || !payeeRate || !persRoutingNumber || !persAccountNumber) {
             return res.status(400).json({ error: 'Missing required business, personal, or banking fields.' });
+        }
+        
+        // Check if address fields are present (assuming street, city, state, zip are passed now)
+        if (!bizStreet || !bizCity || !bizState || !bizZip) {
+             return res.status(400).json({ error: 'Missing required business address fields (street, city, state, zip).' });
         }
 
         const existing = await Employee.findOne({ email });
@@ -61,17 +72,23 @@ router.post('/onboard-solo', async (req, res) => {
             email, firstName, lastName, passwordHash, requiresPasswordChange: true,
             
             // Roles & Status
-            role: 'employer', // Access the Solo Dashboard
-            isSelfEmployed: true, // Flag for restrictions
+            role: 'employer', 
+            isSelfEmployed: true, 
             status: 'active',
             
             // Business Info (Employer side)
             companyName,
-            externalEmployeeId: businessTaxId, // Reusing field for business ID/SSN
-            address: { line1: businessAddress || '' },
-            
+            externalEmployeeId: businessTaxId,
+            // ✅ FIX: Using the structured address fields
+            address: { 
+                line1: bizStreet,
+                city: bizCity,
+                state: bizState,
+                zip: bizZip
+            },
+
             // Pay Configuration (Employee side)
-            payType: 'salary', // Assume solo income is treated as salary for consistency
+            payType: 'salary', 
             salaryAmount: payeeRate, 
             ssn: payeeSSN,
             filingStatus: filingStatus || 'single',
