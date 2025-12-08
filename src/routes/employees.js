@@ -35,7 +35,7 @@ function serializeEmployee(emp) {
 router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
-    // ✅ CHECK: Block self-employed from inviting others
+    // CHECK: Block self-employed from inviting others
     if (employer && employer.isSelfEmployed) {
         return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
     }
@@ -124,20 +124,25 @@ router.get('/:employeeId/payroll-runs', requireAuth(['admin', 'employer']), asyn
 router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     let query = {};
-    if (req.user.role === 'employer') {
-      query.employer = req.user.id;
-      // ✅ CHECK: If self-employed, only list *their* employee record (which is them)
+    
+    // ✅ FIX: Admin should only see standard employees for the 'Employees' tab
+    if (req.user.role === 'admin') {
+      query.role = 'employee'; 
+    } 
+    
+    // Employer-specific logic remains for security on the dashboard
+    else if (req.user.role === 'employer') {
       const employer = await Employee.findById(req.user.id);
+      
       if (employer && employer.isSelfEmployed) {
-          query._id = req.user.id; // Restrict list to their own ID
-          // Must ensure that the employer is also considered an "employee" in this view
-          query.$or = [{ employer: req.user.id }, { _id: req.user.id }];
-          delete query.employer; // Remove the standard employer filter
+          // Solo client sees only their own profile
+          query._id = req.user.id; 
       } else {
-          // Standard employer: list employees tied to their employer ID
+          // Standard employer sees employees linked to them
           query.employer = req.user.id;
       }
     }
+    
     const employees = await Employee.find(query).sort({ createdAt: -1 }).lean();
     res.json(employees.map(serializeEmployee));
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -172,7 +177,7 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
 router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
-    // ✅ CHECK: Block self-employed from manually creating others
+    // CHECK: Block self-employed from manually creating others
     if (employer && employer.isSelfEmployed) {
         return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
     }
