@@ -35,8 +35,8 @@ function serializeEmployee(emp) {
 router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
-    // ✅ NEW CHECK: Block self-employed from inviting others
-    if (employer.isSelfEmployed) {
+    // ✅ CHECK: Block self-employed from inviting others
+    if (employer && employer.isSelfEmployed) {
         return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
     }
 
@@ -126,10 +126,16 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let query = {};
     if (req.user.role === 'employer') {
       query.employer = req.user.id;
-      // ✅ NEW CHECK: If self-employed, only list *their* employee record (which is them)
+      // ✅ CHECK: If self-employed, only list *their* employee record (which is them)
       const employer = await Employee.findById(req.user.id);
-      if (employer.isSelfEmployed) {
+      if (employer && employer.isSelfEmployed) {
           query._id = req.user.id; // Restrict list to their own ID
+          // Must ensure that the employer is also considered an "employee" in this view
+          query.$or = [{ employer: req.user.id }, { _id: req.user.id }];
+          delete query.employer; // Remove the standard employer filter
+      } else {
+          // Standard employer: list employees tied to their employer ID
+          query.employer = req.user.id;
       }
     }
     const employees = await Employee.find(query).sort({ createdAt: -1 }).lean();
@@ -142,9 +148,22 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
-    if (req.user.role === 'employer' && String(emp.employer) !== req.user.id) {
-      return res.status(403).json({ error: 'Forbidden' });
+    
+    const requester = await Employee.findById(req.user.id);
+    
+    // Check if requester is Admin, or if requester is the employee OR the employee's employer
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed) {
+            // Self-employed user can only view their own profile
+            if (String(emp._id) !== req.user.id) {
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+        } else if (String(emp.employer) !== req.user.id) {
+            // Standard employer can only view employees tied to their ID
+            return res.status(403).json({ error: 'Forbidden' });
+        }
     }
+
     res.json(emp);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -153,8 +172,8 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
 router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
-    // ✅ NEW CHECK: Block self-employed from manually creating others
-    if (employer.isSelfEmployed) {
+    // ✅ CHECK: Block self-employed from manually creating others
+    if (employer && employer.isSelfEmployed) {
         return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
     }
     
@@ -197,7 +216,17 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
-    if (req.user.role === 'employer' && String(emp.employer) !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    
+    const requester = await Employee.findById(req.user.id);
+
+    // Security check: Only allow update if Admin, or if requester is the employee's employer
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed && String(emp._id) !== req.user.id) {
+            return res.status(403).json({ error: 'Self-Employed accounts can only update their own profile.' });
+        } else if (!requester.isSelfEmployed && String(emp.employer) !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
 
     Object.assign(emp, req.body);
     
@@ -216,7 +245,19 @@ router.delete('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
     if (!emp) return res.status(404).json({ error: 'Not found' });
-    if (req.user.role === 'employer' && String(emp.employer) !== req.user.id) return res.status(403).json({ error: 'Forbidden' });
+    
+    const requester = await Employee.findById(req.user.id);
+    
+    // Security check: Block deletion if not Admin, and block solo client from deleting
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed) {
+            // Self-employed user must contact admin to delete their own account/business
+            return res.status(403).json({ error: 'Self-Employed accounts cannot be deleted through this portal.' });
+        } else if (String(emp.employer) !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
+
     await Employee.findByIdAndDelete(req.params.id);
     res.json({ message: 'Deleted' });
   } catch (err) { res.status(500).json({ error: err.message }); }
