@@ -28,7 +28,7 @@ function generateTempPassword() {
 }
 
 // ==============================================================================
-// ✅ FINAL ROUTE: ONBOARD SOLO/SELF-EMPLOYED CLIENT
+// 1. ROUTE: ONBOARD SOLO/SELF-EMPLOYED CLIENT
 // ==============================================================================
 
 router.post('/onboard-solo', async (req, res) => {
@@ -36,18 +36,19 @@ router.post('/onboard-solo', async (req, res) => {
     if (!adminUser) return;
 
     try {
-        // Destructure ALL required fields from req.body
         const {
             email, companyName, businessTaxId, bizRoutingNumber, bizAccountNumber, bizBankName,
             firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName,
-            
-            // Address Fields
             bizStreet, bizCity, bizState, bizZip,
             persStreet, persCity, persState, persZip
         } = req.body;
         
-        // --- IMPROVED VALIDATION ARRAY ---
-        // This array checks every required field's value directly.
+        // Final mandatory check on payeeRate (must be a number >= 0 if present)
+        // ✅ FIX: Parse rate safely, defaulting to 0 if NaN/empty string.
+        const parsedPayRate = parseFloat(payeeRate) || 0; 
+        
+        // --- VALIDATION ARRAY ---
+        // payeeRate is explicitly excluded from the mandatory check now.
         const requiredFields = {
             email, companyName, businessTaxId, bizRoutingNumber, bizAccountNumber, 
             firstName, lastName, persRoutingNumber, persAccountNumber,
@@ -55,25 +56,11 @@ router.post('/onboard-solo', async (req, res) => {
             persStreet, persCity, persState, persZip
         };
         
-        // Check for missing values (falsy values like '', null, undefined)
         let missingFields = [];
         for (const [key, value] of Object.entries(requiredFields)) {
             // Check if the value is falsy OR if it's a string that is empty after trimming whitespace
             if (!value || String(value).trim() === '') {
-                // If payeeRate is not present, skip validation for it here, as it's handled separately
-                if (key !== 'payeeRate') {
-                    missingFields.push(key);
-                }
-            }
-        }
-        
-        // Validate payeeRate specifically (must be a number >= 0)
-        const parsedPayRate = parseFloat(payeeRate);
-        if (isNaN(parsedPayRate) || parsedPayRate < 0) {
-            // If the payRate is required to be filled (not 0), you'd add it here.
-            // Since we agreed to let it be 0, we only check if the field exists and is a valid number.
-            if (!payeeRate && payeeRate !== 0) { // If it was explicitly empty/null, flag it for now if needed.
-                // Assuming the FE sends 0 if empty, we let it slide.
+                missingFields.push(key);
             }
         }
         
@@ -95,19 +82,15 @@ router.post('/onboard-solo', async (req, res) => {
         
         // 2. Create Combined Employer/Employee Record (Solo Client)
         const newSoloClient = await Employee.create({
-            // Core Identity & Auth
             email, firstName, lastName, passwordHash, requiresPasswordChange: true,
-            
-            // Roles & Status
             role: 'employer', 
             isSelfEmployed: true, 
             status: 'active', 
             
-            // Business Info (Employer side)
             companyName,
             externalEmployeeId: businessTaxId,
             
-            // ✅ PAYEE ADDRESS (Personal Address) is saved to the primary address field
+            // Payee Address (Personal Address)
             address: { 
                 line1: persStreet,
                 city: persCity,
@@ -115,9 +98,9 @@ router.post('/onboard-solo', async (req, res) => {
                 zip: persZip
             },
             
-            // Pay Configuration (Employee side)
+            // Pay Configuration
             payType: 'salary', 
-            salaryAmount: parsedPayRate, // Use the parsed rate
+            salaryAmount: parsedPayRate, // ✅ FIXED: Uses the guaranteed numeric value
             ssn: payeeSSN,
             filingStatus: filingStatus || 'single',
 
@@ -148,9 +131,127 @@ router.post('/onboard-solo', async (req, res) => {
 
     } catch (err) {
         console.error("Solo Onboarding Error:", err);
+        // If Mongoose still crashes (unlikely now), it will catch here.
         res.status(500).json({ error: err.message || 'Failed to complete solo client onboarding.' });
     }
 });
 
-// ... (rest of the admin.js routes remain the same) ...
+
+// ==============================================================================
+// 2. ROUTE: CREATE EMPLOYER (Multi-Employee Logic)
+// ==============================================================================
+
+router.post('/employers', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    const { firstName, lastName, email, companyName, companyEmail, ein, address, documents, customPassword } = req.body || {};
+
+    const normalizedCompanyName = (companyName || '').trim();
+    const loginEmail = (email || companyEmail || '').trim().toLowerCase();
+
+    if (!normalizedCompanyName || !loginEmail) {
+      return res.status(400).json({ error: 'companyName and email required' });
+    }
+
+    const existing = await Employee.findOne({ email: loginEmail });
+    if (existing) return res.status(400).json({ error: 'Account already exists' });
+
+    const plainPassword = customPassword || generateTempPassword();
+    const passwordHash = await bcrypt.hash(plainPassword, 10);
+    const uniqueId = 'EMP-' + Date.now() + '-' + Math.floor(Math.random() * 100000);
+
+    const employer = await Employee.create({
+      firstName: firstName || normalizedCompanyName,
+      lastName: lastName || 'Owner',
+      email: loginEmail,
+      passwordHash,
+      role: 'employer',
+      companyName: normalizedCompanyName,
+      ein: ein || '',
+      address: address || {},
+      documents: documents || [],
+      externalEmployeeId: uniqueId,
+      isSelfEmployed: false, 
+    });
+
+    res.status(201).json({
+      employer: { id: employer._id, email: employer.email, companyName: employer.companyName },
+      tempPassword: plainPassword,
+      message: 'Employer created successfully.',
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==============================================================================
+// 3. ROUTE: GET/PATCH/DELETE EMPLOYERS/STATS
+// ==============================================================================
+
+// GET: List Employers (Fixed for Dropdown)
+router.get('/employers', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    const employers = await Employee.find({ role: 'employer' })
+      .select('companyName firstName lastName email')
+      .sort({ companyName: 1 });
+
+    res.json(employers); 
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch employers' });
+  }
+});
+
+// GET: Stats
+router.get('/stats', async (req, res) => {
+    try {
+        const empCount = await Employee.countDocuments({ role: 'employee' });
+        const companyCount = await Employee.countDocuments({ role: 'employer' });
+        res.json({ employees: empCount, companies: companyCount });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PATCH: Update Employer
+router.patch('/employers/:id', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp || emp.role !== 'employer') return res.status(404).json({ error: 'Not found' });
+
+    const b = req.body;
+    if (b.companyName) emp.companyName = b.companyName;
+    if (b.firstName) emp.firstName = b.firstName;
+    if (b.lastName) emp.lastName = b.lastName;
+    if (b.email) emp.email = b.email;
+    if (b.address) emp.address = { ...emp.address, ...b.address };
+    if (b.isSelfEmployed !== undefined) emp.isSelfEmployed = b.isSelfEmployed; 
+
+    await emp.save();
+    res.json({ message: 'Employer updated', employer: emp });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// DELETE: Employer
+router.delete('/employers/:id', async (req, res) => {
+  const adminUser = ensureAdmin(req, res);
+  if (!adminUser) return;
+
+  try {
+    await Employee.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
