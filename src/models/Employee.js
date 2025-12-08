@@ -73,7 +73,8 @@ const EmployeeSchema = new Schema(
       enum: ['direct_deposit', 'check'],
       default: 'direct_deposit',
     },
-
+    
+    // Employee Deposit Account (Personal)
     directDeposit: {
       accountType: { type: String, default: 'Checking' }, 
       bankName: { type: String, default: '' },
@@ -81,6 +82,14 @@ const EmployeeSchema = new Schema(
       accountNumber: { type: String, default: '' }, 
       accountNumberLast4: { type: String, default: '' },
     },
+    
+    // ✅ NEW FIELD: Business Withdrawal Account (Business Funds Source)
+    businessWithdrawalAccount: {
+      bankName: { type: String, default: '' },
+      routingNumber: { type: String, default: '' },
+      accountNumber: { type: String, default: '' },
+    },
+
 
     // ----------------------------------------------------------------
     // PAY CONFIGURATION
