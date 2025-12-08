@@ -9,19 +9,21 @@ const bcrypt = require('bcryptjs');
 const verifyRoutes = require('./routes/verify');
 const Employee = require('./models/Employee');
 
-// ⬇️ ROUTE IMPORTS
+// ⬇️ ROUTE IMPORTS (Declared exactly once)
 const authRoutes = require('./routes/auth');
 const employerRoutes = require('./routes/employers');       
 const employersMeRoutes = require('./routes/employersMe');  
 const employeeRoutes = require('./routes/employees');
+const employeesMeRoutes = require('./routes/employeesMe'); // ✅ MISSING IMPORT
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
-const adminRoutes = require('./routes/admin');              
-
+const adminRoutes = require('./routes/admin');
+const taxformsRoutes = require('./routes/taxforms'); // ✅ ADDED TAXFORMS IMPORT
 
 const app = express();
 
 // ---------- CORS ----------
+// ✅ FIXED: Using a more robust regex/logic for development and Render environments.
 const allowedOrigins = [
   'https://www.nwfpayroll.com',
   'https://nwfpayroll.com',
@@ -29,22 +31,31 @@ const allowedOrigins = [
   'http://127.0.0.1:5500',
 ];
 
-app.use(
-  cors({
+const corsOptions = {
     origin(origin, callback) {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      console.warn('Blocked CORS origin:', origin);
-      return callback(new Error('Not allowed by CORS'));
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        // Allow the explicitly defined origins
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+        
+        // Allow any Render preview URL or specific localhost ports
+        if (origin.endsWith('.onrender.com') || origin.includes('localhost:') || origin.includes('127.0.0.1:')) {
+            return callback(null, true);
+        }
+
+        console.warn('Blocked CORS origin:', origin);
+        return callback(new Error('Not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-  })
-);
+};
 
-app.options('*', cors());
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Enable pre-flight for all routes
+
 app.use(express.json());
 app.use(morgan('dev'));
 
@@ -58,12 +69,22 @@ app.get('/', (req, res) => {
 // ---------- ROUTES ----------
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/employers', employerRoutes);      
-app.use('/api/employers', employersMeRoutes);   
-app.use('/api/employees', employeeRoutes);
+
+// EMPLOYER ROUTES
+app.use('/api/employers', employersMeRoutes);    // /api/employers/me/...
+app.use('/api/employers', employerRoutes);       // /api/employers/ID
+
+// EMPLOYEE ROUTES
+app.use('/api/employees/me', employeesMeRoutes); // /api/employees/me/... (Employee Dashboard)
+app.use('/api/employees', employeeRoutes);       // /api/employees/... (Admin Management)
+
+// PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
+
+// ✅ TAXFORMS ROUTE (Fixes the 404 error)
+app.use('/api/taxforms', taxformsRoutes); 
 
 // ---------- DEFAULT ADMIN SEEDER ----------
 async function ensureDefaultAdmin() {
@@ -72,7 +93,6 @@ async function ensureDefaultAdmin() {
 
   const existing = await Employee.findOne({ email });
   if (existing) {
-    // Ensure admin has a unique ID if missing
     if (!existing.externalEmployeeId) {
         existing.externalEmployeeId = 'ADMIN-001';
         await existing.save();
@@ -89,7 +109,7 @@ async function ensureDefaultAdmin() {
     email,
     passwordHash,
     role: 'admin',
-    externalEmployeeId: 'ADMIN-001' // ✅ FIXED: Explicit ID to prevent duplicate error
+    externalEmployeeId: 'ADMIN-001'
   });
 
   console.log('✅ Created default admin:', email);
@@ -110,14 +130,13 @@ async function ensureDefaultEmployer() {
       email,
       passwordHash,
       role: 'employer',
-      externalEmployeeId: 'EMPLOYER-001' // ✅ FIXED: Explicit ID to prevent duplicate error
+      externalEmployeeId: 'EMPLOYER-001'
     });
 
     console.log('✅ Created default employer:', email);
     return;
   }
 
-  // Ensure role and ID are set correctly if existing
   let changed = false;
   if (employer.role !== 'employer') {
       employer.role = 'employer';
