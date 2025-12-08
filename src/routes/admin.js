@@ -39,18 +39,22 @@ router.post('/onboard-solo', async (req, res) => {
         const {
             email, companyName, businessTaxId, bizRoutingNumber, bizAccountNumber, bizBankName,
             firstName, lastName, payeeRate, payeeSSN, filingStatus, persRoutingNumber, persAccountNumber, persBankName,
-            // Destructure individual address fields sent by the frontend
-            bizStreet, bizCity, bizState, bizZip 
+            
+            // Business Address Fields
+            bizStreet, bizCity, bizState, bizZip,
+            
+            // ✅ FINAL FIX: Payee/Personal Address Fields Destructured
+            persStreet, persCity, persState, persZip
         } = req.body;
         
-
-        // ✅ FINAL VALIDATION FIX: Check ALL required fields explicitly
+        // ✅ FINAL VALIDATION: Check ALL required fields explicitly
         if (
             !email || !companyName || !businessTaxId || 
             !bizRoutingNumber || !bizAccountNumber || 
             !firstName || !lastName || !payeeRate || 
             !persRoutingNumber || !persAccountNumber ||
-            !bizStreet || !bizCity || !bizState || !bizZip // Crucial Address Check
+            !bizStreet || !bizCity || !bizState || !bizZip ||
+            !persStreet || !persCity || !persState || !persZip // <-- Validation for new fields
         ) {
             return res.status(400).json({ error: 'Missing required fields for business, payee, or banking details. Please fill all fields marked with *.' });
         }
@@ -77,14 +81,18 @@ router.post('/onboard-solo', async (req, res) => {
             // Business Info (Employer side)
             companyName,
             externalEmployeeId: businessTaxId,
-            // Address object for Mongoose
+            // Business Address
+            // NOTE: The address field in Mongoose is currently used for the Employee/Payee address.
+            // We'll prioritize the Payee's personal address for W2/1099 generation since they are the employee.
+            
+            // Payee Address (Personal Address)
             address: { 
-                line1: bizStreet,
-                city: bizCity,
-                state: bizState,
-                zip: bizZip
+                line1: persStreet,
+                city: persCity,
+                state: persState,
+                zip: persZip
             },
-
+            
             // Pay Configuration (Employee side)
             payType: 'salary', 
             salaryAmount: payeeRate, 
