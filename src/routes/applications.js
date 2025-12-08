@@ -1,12 +1,8 @@
 // src/routes/applications.js
 const express = require('express');
 const router = express.Router();
-// ✅ CORRECTED PATH: Use './models/Application' or ensure relative path is correct.
-// Since Render structure often nests files, we'll try to go up one more or adjust the path.
-// The safer path is usually '../models/Application' if the structure is routes/models under src/.
-// Based on the error, the correct path should be relative to the module system's understanding.
-// Let's assume the module path is correct relative to the server root:
-const Application = require('../models/Application'); 
+// ✅ FIX: Changed path from '../models/Application' to '../../models/Application'
+const Application = require('../../models/Application'); 
 
 // POST /api/applications - Handles job application submission
 router.post('/', async (req, res) => {
