@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const router = express.Router();
 const Employee = require('../models/Employee');
-const PayrollRun = require('../models/PayrollRun'); // Need this import
+const PayrollRun = require('../models/PayrollRun'); 
 const { requireAuth } = require('../middleware/auth');
 const klaviyoService = require('../services/klaviyoService');
 
@@ -23,7 +23,7 @@ function serializeEmployee(emp) {
     status: emp.status,
     invitationToken: emp.invitationToken ? 'Pending Invite' : null,
     createdAt: emp.createdAt,
-    requiresPasswordChange: emp.requiresPasswordChange, // Include new field
+    requiresPasswordChange: emp.requiresPasswordChange, 
   };
 }
 
@@ -34,6 +34,12 @@ function serializeEmployee(emp) {
 // 1. INVITE EMPLOYEE (Employer initiates)
 router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
+    const employer = await Employee.findById(req.user.id);
+    // ✅ NEW CHECK: Block self-employed from inviting others
+    if (employer.isSelfEmployed) {
+        return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
+    }
+
     const { firstName, lastName, email, payRate, payType, hireDate } = req.body;
     if (!email || !firstName || !lastName) return res.status(400).json({ error: "Name and Email are required" });
     const existing = await Employee.findOne({ email });
@@ -93,7 +99,7 @@ router.post('/onboard/complete', async (req, res) => {
 //  STANDARD CRUD & DETAIL ROUTES
 // ==============================================================================
 
-// ✅ NEW: GET ALL PAYROLL RUNS FOR A SINGLE EMPLOYEE
+// GET ALL PAYROLL RUNS FOR A SINGLE EMPLOYEE
 router.get('/:employeeId/payroll-runs', requireAuth(['admin', 'employer']), async (req, res) => {
     try {
         const { employeeId } = req.params;
@@ -120,6 +126,11 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let query = {};
     if (req.user.role === 'employer') {
       query.employer = req.user.id;
+      // ✅ NEW CHECK: If self-employed, only list *their* employee record (which is them)
+      const employer = await Employee.findById(req.user.id);
+      if (employer.isSelfEmployed) {
+          query._id = req.user.id; // Restrict list to their own ID
+      }
     }
     const employees = await Employee.find(query).sort({ createdAt: -1 }).lean();
     res.json(employees.map(serializeEmployee));
@@ -141,6 +152,12 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
 // MANUAL CREATE EMPLOYEE
 router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
+    const employer = await Employee.findById(req.user.id);
+    // ✅ NEW CHECK: Block self-employed from manually creating others
+    if (employer.isSelfEmployed) {
+        return res.status(403).json({ error: "Self-Employed accounts cannot add other employees." });
+    }
+    
     const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
 
     if (!firstName || !lastName || !email) return res.status(400).json({ error: 'firstName, lastName, email required' });
