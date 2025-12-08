@@ -153,3 +153,4 @@ router.post('/onboard-solo', async (req, res) => {
 });
 
 // ... (rest of the admin.js routes remain the same) ...
+module.exports = router;
