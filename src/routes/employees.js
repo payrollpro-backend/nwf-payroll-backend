@@ -24,11 +24,10 @@ function serializeEmployee(emp) {
     invitationToken: emp.invitationToken ? 'Pending Invite' : null,
     createdAt: emp.createdAt,
     requiresPasswordChange: emp.requiresPasswordChange, 
+    // Ensure nested address data is serialized for the admin view if needed
+    address: emp.address || {}, 
   };
 }
-
-// src/routes/employees.js
-// ... (imports and serializeEmployee function remain the same) ...
 
 // ==============================================================================
 //  SELF-ONBOARDING ROUTES
@@ -42,12 +41,9 @@ router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
     // ✅ FIX: Allow 1 Employee
     if (employer && employer.isSelfEmployed) {
         // Count how many employees this self-employed user has linked to their ID.
-        // Since a solo client is also their own employee, the count will be 1 
-        // (if they view themselves as the employee) or 0 (if they only exist as employer).
-        // Let's assume the solo client is the employer and their employees linked via `employer` field.
         const employeeCount = await Employee.countDocuments({ employer: req.user.id });
         
-        if (employeeCount >= 1) { // If the count is 1 or more, they already have one employee (or more).
+        if (employeeCount >= 1) { 
             return res.status(403).json({ error: "Self-Employed accounts are restricted to managing only one additional employee." });
         }
     }
@@ -77,16 +73,114 @@ router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// ... (onboard routes remain the same) ...
+// 2. VERIFY TOKEN
+router.get('/onboard/:token', async (req, res) => {
+    try {
+        const emp = await Employee.findOne({ invitationToken: req.params.token });
+        if (!emp) return res.status(404).json({ error: "Invalid or expired link" });
+        res.json({ email: emp.email, firstName: emp.firstName, lastName: emp.lastName });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// 3. COMPLETE SETUP
+router.post('/onboard/complete', async (req, res) => {
+    try {
+        const { token, password, ssn, dob, phone, gender, address, bankName, routingNumber, accountNumber, accountType, filingStatus, stateFilingStatus } = req.body;
+        const emp = await Employee.findOne({ invitationToken: token });
+        if (!emp) return res.status(400).json({ error: "Invalid or expired token" });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        emp.passwordHash = hashedPassword;
+        emp.requiresPasswordChange = false;
+        emp.phone = phone; emp.ssn = ssn; emp.dob = dob; emp.gender = gender; emp.address = address; 
+        emp.directDeposit = { bankName, routingNumber, accountNumber, accountNumberLast4: accountNumber.slice(-4), accountType: accountType || 'Checking' };
+        emp.filingStatus = filingStatus || 'single'; emp.stateFilingStatus = stateFilingStatus || 'single';
+        emp.invitationToken = null; emp.onboardingCompleted = true; emp.status = 'active';
+
+        await emp.save();
+        res.json({ success: true, message: "Account setup complete! You can now log in." });
+    } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // ==============================================================================
 //  STANDARD CRUD & DETAIL ROUTES
 // ==============================================================================
 
-// ... (GET /:employeeId/payroll-runs remains the same) ...
-// ... (LIST EMPLOYEES / remains the same) ...
-// ... (GET SINGLE EMPLOYEE /:id remains the same) ...
+// GET ALL PAYROLL RUNS FOR A SINGLE EMPLOYEE
+router.get('/:employeeId/payroll-runs', requireAuth(['admin', 'employer']), async (req, res) => {
+    try {
+        const { employeeId } = req.params;
+        
+        // Security check: If employer, ensure they own this employee
+        if (req.user.role === 'employer' && String(req.user.id) !== (await Employee.findById(employeeId)).employer.toString()) {
+             return res.status(403).json({ error: 'Forbidden' });
+        }
 
+        const runs = await PayrollRun.find({ employee: employeeId })
+            .sort({ payDate: -1, createdAt: -1 })
+            .lean();
+            
+        res.json(runs);
+
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// LIST EMPLOYEES
+router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
+  try {
+    let query = {};
+    
+    // ✅ FIX: Admin should only see standard employees for the 'Employees' tab
+    if (req.user.role === 'admin') {
+      query.role = 'employee'; 
+    } 
+    
+    // Employer-specific logic remains for security on the dashboard
+    else if (req.user.role === 'employer') {
+      const employer = await Employee.findById(req.user.id);
+      
+      if (employer && employer.isSelfEmployed) {
+          // Solo client sees only their own profile
+          query._id = req.user.id; 
+      } else {
+          // Standard employer sees employees linked to them
+          query.employer = req.user.id;
+      }
+    }
+    
+    // Employee.find() will now correctly use the filtered query
+    const employees = await Employee.find(query).sort({ createdAt: -1 }).lean();
+    res.json(employees.map(serializeEmployee));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// GET SINGLE EMPLOYEE
+router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    
+    const requester = await Employee.findById(req.user.id);
+    
+    // Check if requester is Admin, or if requester is the employee OR the employee's employer
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed) {
+            // Self-employed user can only view their own profile
+            if (String(emp._id) !== req.user.id) {
+                return res.status(403).json({ error: 'Forbidden' });
+            }
+        } else if (String(emp.employer) !== req.user.id) {
+            // Standard employer can only view employees tied to their ID
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
+
+    res.json(emp);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // MANUAL CREATE EMPLOYEE
 router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
@@ -98,7 +192,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
         // Count how many employees this self-employed user has linked to their ID.
         const employeeCount = await Employee.countDocuments({ employer: req.user.id });
         
-        if (employeeCount >= 1) { // If the count is 1 or more, they already have one employee (or more).
+        if (employeeCount >= 1) { 
             return res.status(403).json({ error: "Self-Employed accounts are restricted to managing only one additional employee." });
         }
     }
@@ -137,6 +231,56 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   }
 });
 
-// ... (UPDATE EMPLOYEE and DELETE EMPLOYEE remain the same) ...
+// UPDATE EMPLOYEE
+router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    
+    const requester = await Employee.findById(req.user.id);
+
+    // Security check: Only allow update if Admin, or if requester is the employee's employer
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed && String(emp._id) !== req.user.id) {
+            return res.status(403).json({ error: 'Self-Employed accounts can only update their own profile.' });
+        } else if (!requester.isSelfEmployed && String(emp.employer) !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
+
+    Object.assign(emp, req.body);
+    
+    if (req.body.payRate !== undefined) {
+       if (emp.payType === 'salary') { emp.salaryAmount = req.body.payRate; emp.hourlyRate = 0; } 
+       else { emp.hourlyRate = req.body.payRate; emp.salaryAmount = 0; }
+    }
+
+    await emp.save();
+    res.json({ employee: serializeEmployee(emp) });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+// DELETE EMPLOYEE
+router.delete('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
+  try {
+    const emp = await Employee.findById(req.params.id);
+    if (!emp) return res.status(404).json({ error: 'Not found' });
+    
+    const requester = await Employee.findById(req.user.id);
+    
+    // Security check: Block deletion if not Admin, and block solo client from deleting
+    if (requester.role === 'employer') {
+        if (requester.isSelfEmployed) {
+            // Self-employed user must contact admin to delete their own account/business
+            return res.status(403).json({ error: 'Self-Employed accounts cannot be deleted through this portal.' });
+        } else if (String(emp.employer) !== req.user.id) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+    }
+
+    await Employee.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Deleted' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 module.exports = router;
