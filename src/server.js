@@ -19,7 +19,7 @@ const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');         
 const adminRoutes = require('./routes/admin');
 const taxformsRoutes = require('./routes/taxforms'); 
-const applicationsRoutes = require('./routes/applications'); // ✅ NEW IMPORT
+const applicationsRoutes = require('./routes/applications'); 
 
 const app = express();
 
@@ -47,10 +47,9 @@ const corsOptions = {
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
 };
-app.use(cors({ origin: 'https://www.nwfpayroll.com' }));
+
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions)); 
-app.use('/api/auth', require('./routes/auth'));
+app.options('*', cors(corsOptions)); // Ensure OPTIONS requests are handled for CORS
 
 app.use(express.json());
 app.use(morgan('dev'));
@@ -76,7 +75,7 @@ app.use('/api/employees', employeeRoutes);
 
 // PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
-app.use('/api/paystubs', paystubRoutes);
+app.use('/api/paystubs', paystubsRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
 
 // TAXFORMS ROUTE
@@ -174,7 +173,7 @@ mongoose
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
     });
-  }) // <-- Closing brace for .then() added here
+  })
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);
     process.exit(1);
