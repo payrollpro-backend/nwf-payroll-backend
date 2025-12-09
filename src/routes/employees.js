@@ -38,7 +38,7 @@ router.post('/invite', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
     
-    // ✅ FIX: Allow 1 Employee
+    // FIX: Allow 1 Employee
     if (employer && employer.isSelfEmployed) {
         // Count how many employees this self-employed user has linked to their ID.
         const employeeCount = await Employee.countDocuments({ employer: req.user.id });
@@ -133,7 +133,7 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     let query = {};
     
-    // ✅ FIX: Admin should only see standard employees for the 'Employees' tab
+    // FIX: Admin should only see standard employees for the 'Employees' tab
     if (req.user.role === 'admin') {
       query.role = 'employee'; 
     } 
@@ -187,7 +187,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const employer = await Employee.findById(req.user.id);
     
-    // ✅ FIX: Allow 1 Employee
+    // FIX: Allow 1 Employee
     if (employer && employer.isSelfEmployed) {
         // Count how many employees this self-employed user has linked to their ID.
         const employeeCount = await Employee.countDocuments({ employer: req.user.id });
@@ -248,23 +248,27 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
         }
     }
 
-    // 1. Manually Merge Nested Objects (CRUCIAL FIX)
     const b = req.body;
     
+    // 1. Manually Merge Nested Objects (CRUCIAL FIX FOR PROFILE UPDATE ERROR)
     if (b.address) {
+        // Merge new address data into the existing address object
         emp.address = { ...emp.address, ...b.address };
         delete b.address; 
     }
     
     if (b.directDeposit) {
+        // Merge new direct deposit data into the existing directDeposit object
         emp.directDeposit = { ...emp.directDeposit, ...b.directDeposit };
         if (b.directDeposit.accountNumber) {
+            // Update last 4 digits if account number changed
             emp.directDeposit.accountNumberLast4 = b.directDeposit.accountNumber.slice(-4);
         }
         delete b.directDeposit;
     }
     
     if (b.businessWithdrawalAccount) {
+        // Merge new business withdrawal account data
         emp.businessWithdrawalAccount = { ...emp.businessWithdrawalAccount, ...b.businessWithdrawalAccount };
         delete b.businessWithdrawalAccount;
     }
