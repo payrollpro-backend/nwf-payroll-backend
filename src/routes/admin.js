@@ -4,7 +4,12 @@ const bcrypt = require('bcryptjs');
 const Employee = require('../models/Employee');
 const { requireAuth } = require('../middleware/auth');
 
-// ... (Rest of admin.js logic remains the same as in previous response) ...
+// 🛑 FIX REQUIRED: Initialize the router here
+const router = express.Router(); 
+
+// Helper: ensure the current user is an ADMIN
+function ensureAdmin(req, res) {
+// ... (rest of the code) ...
 
 // GET: List Employers (Fixed for Dropdown)
 router.get('/employers', async (req, res) => {
