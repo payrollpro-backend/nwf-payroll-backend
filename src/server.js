@@ -75,7 +75,7 @@ app.use('/api/employees', employeeRoutes);
 
 // PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
-app.use('/api/paystubs', paystubsRoutes);
+app.use('/api/paystubs', paystubRoutes);
 app.use('/api/verify-paystub', verifyRoutes);
 
 // TAXFORMS ROUTE
