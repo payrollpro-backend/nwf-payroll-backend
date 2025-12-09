@@ -16,7 +16,7 @@ const employersMeRoutes = require('./routes/employersMe');
 const employeeRoutes = require('./routes/employees');
 const employeesMeRoutes = require('./routes/employeesMe'); 
 const payrollRoutes = require('./routes/payroll');
-const paystubRoutes = require('./routes/paystubs');         
+const paystubRoutes = require('./routes/paystubs'); // Corrected variable name: 'paystubRoutes'
 const adminRoutes = require('./routes/admin');
 const taxformsRoutes = require('./routes/taxforms'); 
 const applicationsRoutes = require('./routes/applications'); 
@@ -75,7 +75,8 @@ app.use('/api/employees', employeeRoutes);
 
 // PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
-app.use('/api/paystubs', paystubRoutes);
+// ✅ FIX APPLIED HERE: Using correct variable 'paystubRoutes'
+app.use('/api/paystubs', paystubRoutes); 
 app.use('/api/verify-paystub', verifyRoutes);
 
 // TAXFORMS ROUTE
