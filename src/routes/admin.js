@@ -55,6 +55,7 @@ router.post('/onboard-solo', async (req, res) => {
         
         let missingFields = [];
         for (const [key, value] of Object.entries(requiredFields)) {
+            // Check if the value is falsy OR if it's a string that is empty after trimming whitespace
             if (!value || String(value).trim() === '') {
                 missingFields.push(key);
             }
