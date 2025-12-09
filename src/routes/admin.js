@@ -184,9 +184,9 @@ router.get('/employers', async (req, res) => {
   if (!adminUser) return;
 
   try {
-    // ✅ FIX: Select all potentially needed fields for the frontend list/table
+    // This query is correct and should pull all companies
     const employers = await Employee.find({ role: 'employer' })
-      .select('companyName firstName lastName email isSelfEmployed ein address') // Added ein and address
+      .select('companyName firstName lastName email isSelfEmployed ein address') // Expanded fields for frontend stability
       .sort({ companyName: 1 });
 
     res.json(employers); 
