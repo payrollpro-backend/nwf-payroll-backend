@@ -173,7 +173,7 @@ mongoose
     app.listen(PORT, () => {
       console.log(`✅ Server listening on port ${PORT}`);
     });
-  })
+  }) // <-- Closing brace for .then() added here
   .catch((err) => {
     console.error('MongoDB connection error:', err.message);
     process.exit(1);
