@@ -161,10 +161,10 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
 router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
-    if (!emp) return res.status(404).json({ error: 'Employee not found' });
+    if (!emp) return res.status(404).json({ error: 'Not found' });
     
     const requester = await Employee.findById(req.user.id);
-    
+
     // Check if requester is Admin, or if requester is the employee OR the employee's employer
     if (requester.role === 'employer') {
         if (requester.isSelfEmployed) {
@@ -207,14 +207,31 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let employerId = req.user.role === 'employer' ? req.user.id : req.body.employerId || null;
     let finalCompanyName = companyName || '';
     
+    // FIX: Get the solo client's default salary amount as a fallback
+    let defaultPayRate = 0;
+    if (employer && employer.isSelfEmployed) {
+        defaultPayRate = employer.salaryAmount || 0;
+    }
+    
     const tempPassword = Math.random().toString(36).slice(-8) + "1!";
     const passwordHash = await bcrypt.hash(tempPassword, 10);
 
-    let finalHourly = payType === 'hourly' ? (payRate || hourlyRate || 0) : 0;
-    let finalSalary = payType === 'salary' ? (payRate || salaryAmount || 0) : 0;
+    // Use default empty objects/strings for optional but nested fields to satisfy schema requirements
+    const defaultAddress = address || { line1: '', city: '', state: '', zip: '' };
+    const defaultDirectDeposit = { bankName: '', routingNumber: '', accountNumber: '', accountNumberLast4: '' };
+    
+    // Use the form value first, then the calculated default pay rate
+    let finalHourly = payType === 'hourly' ? (payRate || hourlyRate || defaultPayRate || 0) : 0;
+    let finalSalary = payType === 'salary' ? (payRate || salaryAmount || defaultPayRate || 0) : 0;
 
     const newEmp = await Employee.create({
-      employer: employerId, firstName, lastName, email, phone, role: 'employee', companyName: finalCompanyName, passwordHash, requiresPasswordChange: true, address, ssn, dob, gender,
+      employer: employerId, firstName, lastName, email, phone, role: 'employee', companyName: finalCompanyName, passwordHash, requiresPasswordChange: true, 
+      
+      // FIX: Use default address/deposit to prevent Mongoose crash
+      address: defaultAddress, 
+      directDeposit: defaultDirectDeposit, 
+      
+      ssn, dob, gender,
       startDate: hireDate ? new Date(hireDate) : (startDate ? new Date(startDate) : Date.now()), status: status || 'Active', payMethod: payMethod || 'direct_deposit',
       payType: payType || 'hourly', hourlyRate: finalHourly, salaryAmount: finalSalary, payFrequency: payFrequency || 'biweekly',
       filingStatus: federalStatus || filingStatus || 'Single', stateFilingStatus: stateFilingStatus || 'Single', federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
@@ -289,7 +306,7 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
     res.json({ employee: serializeEmployee(emp) });
   } catch (err) { 
       console.error('Profile Update Save Error:', err);
-      // Return a 500 error, as the client's data was syntactically correct, but validation failed on the server.
+      // FIX: Provide better logging to server logs, but return a generic 500 status to the client
       res.status(500).json({ error: `Update failed. Check Server Logs. Details: ${err.message}` }); 
   }
 });
