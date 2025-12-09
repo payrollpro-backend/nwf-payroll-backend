@@ -9,6 +9,7 @@ const { requireAuth } = require('../middleware/auth');
 const klaviyoService = require('../services/klaviyoService');
 
 function serializeEmployee(emp) {
+  // Ensure we serialize all necessary fields, including nested address data
   return {
     _id: emp._id,
     firstName: emp.firstName,
@@ -24,7 +25,6 @@ function serializeEmployee(emp) {
     invitationToken: emp.invitationToken ? 'Pending Invite' : null,
     createdAt: emp.createdAt,
     requiresPasswordChange: emp.requiresPasswordChange, 
-    // Ensure nested address data is serialized for the admin view if needed
     address: emp.address || {}, 
   };
 }
@@ -248,16 +248,46 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
         }
     }
 
-    Object.assign(emp, req.body);
+    // 1. Manually Merge Nested Objects (CRUCIAL FIX)
+    const b = req.body;
     
-    if (req.body.payRate !== undefined) {
-       if (emp.payType === 'salary') { emp.salaryAmount = req.body.payRate; emp.hourlyRate = 0; } 
-       else { emp.hourlyRate = req.body.payRate; emp.salaryAmount = 0; }
+    if (b.address) {
+        emp.address = { ...emp.address, ...b.address };
+        delete b.address; 
+    }
+    
+    if (b.directDeposit) {
+        emp.directDeposit = { ...emp.directDeposit, ...b.directDeposit };
+        if (b.directDeposit.accountNumber) {
+            emp.directDeposit.accountNumberLast4 = b.directDeposit.accountNumber.slice(-4);
+        }
+        delete b.directDeposit;
+    }
+    
+    if (b.businessWithdrawalAccount) {
+        emp.businessWithdrawalAccount = { ...emp.businessWithdrawalAccount, ...b.businessWithdrawalAccount };
+        delete b.businessWithdrawalAccount;
+    }
+
+    // Ensure they cannot change their role or solo status via this route
+    delete b.isSelfEmployed;
+    delete b.role;
+    
+    // 2. Apply remaining flat fields (companyName, firstName, salaryAmount, etc.)
+    Object.assign(emp, b);
+    
+    // 3. Handle Pay Rate update logic (map payRate to salaryAmount)
+    if (b.payRate !== undefined) {
+       emp.salaryAmount = parseFloat(b.payRate) || 0; 
     }
 
     await emp.save();
     res.json({ employee: serializeEmployee(emp) });
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { 
+      console.error('Profile Update Save Error:', err);
+      // Return a 500 error, as the client's data was syntactically correct, but validation failed on the server.
+      res.status(500).json({ error: `Update failed. Check Server Logs. Details: ${err.message}` }); 
+  }
 });
 
 // DELETE EMPLOYEE
