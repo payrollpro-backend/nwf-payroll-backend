@@ -43,7 +43,6 @@ router.post('/onboard-solo', async (req, res) => {
             persStreet, persCity, persState, persZip
         } = req.body;
         
-        // Final mandatory check on payeeRate (must be a number >= 0 if present)
         const parsedPayRate = parseFloat(payeeRate) || 0; 
         
         // --- VALIDATION ARRAY ---
@@ -56,7 +55,6 @@ router.post('/onboard-solo', async (req, res) => {
         
         let missingFields = [];
         for (const [key, value] of Object.entries(requiredFields)) {
-            // Check if the value is falsy OR if it's a string that is empty after trimming whitespace
             if (!value || String(value).trim() === '') {
                 missingFields.push(key);
             }
@@ -74,11 +72,9 @@ router.post('/onboard-solo', async (req, res) => {
             return res.status(400).json({ error: 'Email already registered.' });
         }
 
-        // 1. Generate Temp Password
         const tempPassword = generateTempPassword();
         const passwordHash = await bcrypt.hash(tempPassword, 10);
         
-        // 2. Create Combined Employer/Employee Record (Solo Client)
         const newSoloClient = await Employee.create({
             email, firstName, lastName, passwordHash, requiresPasswordChange: true,
             role: 'employer', 
@@ -88,7 +84,6 @@ router.post('/onboard-solo', async (req, res) => {
             companyName,
             externalEmployeeId: businessTaxId,
             
-            // Payee Address (Personal Address)
             address: { 
                 line1: persStreet,
                 city: persCity,
@@ -96,13 +91,11 @@ router.post('/onboard-solo', async (req, res) => {
                 zip: persZip
             },
             
-            // Pay Configuration
             payType: 'salary', 
             salaryAmount: parsedPayRate, 
             ssn: payeeSSN,
             filingStatus: filingStatus || 'single',
 
-            // Personal Deposit Account (DEPOSIT TARGET)
             directDeposit: {
                 bankName: persBankName,
                 routingNumber: persRoutingNumber,
@@ -111,7 +104,6 @@ router.post('/onboard-solo', async (req, res) => {
                 accountType: 'Checking'
             },
             
-            // Business Withdrawal Account (FUNDS SOURCE)
             businessWithdrawalAccount: {
                 bankName: bizBankName,
                 routingNumber: bizRoutingNumber,
@@ -119,7 +111,6 @@ router.post('/onboard-solo', async (req, res) => {
             }
         });
 
-        // 3. Return temp password and ID to Admin
         res.status(201).json({ 
             success: true, 
             message: "Solo client successfully onboarded.",
@@ -193,9 +184,9 @@ router.get('/employers', async (req, res) => {
   if (!adminUser) return;
 
   try {
-    // ✅ This query correctly gets all companies (multi-employee and solo)
+    // This query is correct and should pull all companies
     const employers = await Employee.find({ role: 'employer' })
-      .select('companyName firstName lastName email isSelfEmployed') // Ensure isSelfEmployed is selected
+      .select('companyName firstName lastName email isSelfEmployed')
       .sort({ companyName: 1 });
 
     res.json(employers); 
