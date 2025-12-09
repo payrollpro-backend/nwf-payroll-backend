@@ -55,7 +55,6 @@ router.post('/onboard-solo', async (req, res) => {
         
         let missingFields = [];
         for (const [key, value] of Object.entries(requiredFields)) {
-            // Check if the value is falsy OR if it's a string that is empty after trimming whitespace
             if (!value || String(value).trim() === '') {
                 missingFields.push(key);
             }
@@ -185,9 +184,9 @@ router.get('/employers', async (req, res) => {
   if (!adminUser) return;
 
   try {
-    // This query is correct and should pull all companies
+    // ✅ FIX: Select all potentially needed fields for the frontend list/table
     const employers = await Employee.find({ role: 'employer' })
-      .select('companyName firstName lastName email isSelfEmployed')
+      .select('companyName firstName lastName email isSelfEmployed ein address') // Added ein and address
       .sort({ companyName: 1 });
 
     res.json(employers); 
