@@ -23,29 +23,36 @@ router.get('/', async (req, res) => {
 // 2. UPDATE PROFILE (Edit Address, Phone, Bank)
 router.put('/', async (req, res) => {
   try {
-    const { phone, address, directDeposit } = req.body;
+    const { phone, address, directDeposit, firstName, lastName, ssn } = req.body;
     const emp = await Employee.findById(req.user.id);
 
     if (!emp) return res.status(404).json({ error: 'Employee not found' });
 
-    // Update allowed fields
+    // Update allowed flat fields
     if (phone) emp.phone = phone;
+    if (firstName) emp.firstName = firstName;
+    if (lastName) emp.lastName = lastName;
+    if (ssn) emp.ssn = ssn;
+
+    // ✅ FIX 1: Safe merging for Address
     if (address) {
         emp.address = { ...emp.address, ...address };
     }
     
-    // Update Bank Info safely
+    // ✅ FIX 2: Safe merging for Direct Deposit
     if (directDeposit) {
+        // Use spread operator to merge with existing data
         emp.directDeposit = {
             ...emp.directDeposit,
-            bankName: directDeposit.bankName,
-            accountType: directDeposit.accountType,
-            routingNumber: directDeposit.routingNumber,
-            accountNumber: directDeposit.accountNumber,
+            ...directDeposit, // Merge all incoming directDeposit fields
             // Auto-update the "Last 4" for security display
             accountNumberLast4: directDeposit.accountNumber ? directDeposit.accountNumber.slice(-4) : emp.directDeposit.accountNumberLast4
         };
     }
+    
+    // Note: The self-employed client also uses this route to edit their personal fields
+    // which are also stored on this record. This needs to be handled via the corresponding PATCH route 
+    // (/api/employers/me) and only the employee details should be handled here.
 
     await emp.save();
     res.json({ message: 'Profile updated successfully', employee: emp });
