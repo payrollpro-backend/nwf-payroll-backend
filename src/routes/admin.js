@@ -44,11 +44,9 @@ router.post('/onboard-solo', async (req, res) => {
         } = req.body;
         
         // Final mandatory check on payeeRate (must be a number >= 0 if present)
-        // ✅ FIX: Parse rate safely, defaulting to 0 if NaN/empty string.
         const parsedPayRate = parseFloat(payeeRate) || 0; 
         
         // --- VALIDATION ARRAY ---
-        // payeeRate is explicitly excluded from the mandatory check now.
         const requiredFields = {
             email, companyName, businessTaxId, bizRoutingNumber, bizAccountNumber, 
             firstName, lastName, persRoutingNumber, persAccountNumber,
@@ -100,7 +98,7 @@ router.post('/onboard-solo', async (req, res) => {
             
             // Pay Configuration
             payType: 'salary', 
-            salaryAmount: parsedPayRate, // ✅ FIXED: Uses the guaranteed numeric value
+            salaryAmount: parsedPayRate, 
             ssn: payeeSSN,
             filingStatus: filingStatus || 'single',
 
@@ -131,7 +129,6 @@ router.post('/onboard-solo', async (req, res) => {
 
     } catch (err) {
         console.error("Solo Onboarding Error:", err);
-        // If Mongoose still crashes (unlikely now), it will catch here.
         res.status(500).json({ error: err.message || 'Failed to complete solo client onboarding.' });
     }
 });
@@ -196,8 +193,9 @@ router.get('/employers', async (req, res) => {
   if (!adminUser) return;
 
   try {
+    // ✅ This query correctly gets all companies (multi-employee and solo)
     const employers = await Employee.find({ role: 'employer' })
-      .select('companyName firstName lastName email')
+      .select('companyName firstName lastName email isSelfEmployed') // Ensure isSelfEmployed is selected
       .sort({ companyName: 1 });
 
     res.json(employers); 
