@@ -14,6 +14,7 @@ const FRONTEND_URL = 'https://www.nwfpayroll.com';
 
 // --- NEW CONFIGURATION: Payment Link URL ---
 // Your backend must know the Stripe link to send back to the frontend.
+// Note: Frontend handles the redirect logic, but the backend must return a token.
 const STRIPE_PAYMENT_LINK_URL = process.env.STRIPE_PAYMENT_LINK_URL || 'https://buy.stripe.com/test_default_link_update_env';
 // --- END NEW CONFIGURATION ---
 
@@ -55,8 +56,7 @@ router.post('/admin-register', async (req, res) => {
 });
 
 
-// 🛑 NEW REGISTRATION ENDPOINT (Replaces missing /onboarding/start)
-// Frontend will hit this endpoint: /api/auth/register
+// 🛑 NEW REGISTRATION ENDPOINT: POST /api/auth/register
 router.post('/register', async (req, res) => {
   try {
     const { firstName, lastName, workEmail, companyName, employeeCount } = req.body;
@@ -107,7 +107,8 @@ router.post('/register', async (req, res) => {
     res.status(201).json({ 
         message: 'Account record created. Redirecting to payment.',
         onboardingToken: onboardingToken,
-        // The frontend will now use this URL to redirect the user
+        // The frontend uses the token and its own stored URL for the final redirect
+        // We include a placeholder redirectUrl here for completeness
         redirectUrl: STRIPE_PAYMENT_LINK_URL, 
     });
 
