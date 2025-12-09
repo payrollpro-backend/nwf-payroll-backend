@@ -161,7 +161,7 @@ router.get('/', requireAuth(['admin', 'employer']), async (req, res) => {
 router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
   try {
     const emp = await Employee.findById(req.params.id);
-    if (!emp) return res.status(404).json({ error: 'Not found' });
+    if (!emp) return res.status(404).json({ error: 'Employee not found' });
     
     const requester = await Employee.findById(req.user.id);
 
@@ -173,7 +173,6 @@ router.get('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
                 return res.status(403).json({ error: 'Forbidden' });
             }
         } else if (String(emp.employer) !== req.user.id) {
-            // Standard employer can only view employees tied to their ID
             return res.status(403).json({ error: 'Forbidden' });
         }
     }
