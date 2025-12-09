@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 const Employee = require('../models/Employee');
 const { requireAuth } = require('../middleware/auth');
 
-const router = express.Router(); // <--- This must be present and correctly placed
+const router = express.Router(); // CORRECT: Router initialized here
 
 // Helper: ensure the current user is an ADMIN
 function ensureAdmin(req, res) {
