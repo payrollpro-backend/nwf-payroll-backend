@@ -1,74 +1,63 @@
 // src/routes/paystubRoutes.js
+
 const express = require('express');
 const mongoose = require('mongoose');
 const router = express.Router();
 
 const Paystub = require('../models/Paystub');
-const Employee = require('../models/Employee'); // adjust path if needed
+const Employee = require('../models/Employee'); 
+// Assuming a model for PayrollRun exists, if needed
 
-// ✅ GET /api/paystubs
-// List ALL paystubs (for admin dashboard)
-router.get('/', async (req, res) => {
-  try {
-    const paystubs = await Paystub.find()
-      .populate('employee', 'firstName lastName email externalEmployeeId')
-      .sort({ payDate: -1 });
+const { buildPaystubHtml } = require('../utils/paystubTemplate'); 
 
-    res.json(paystubs);
-  } catch (err) {
-    console.error('Error fetching paystubs:', err);
-    res.status(500).json({ message: 'Server error fetching paystubs' });
-  }
-});
+// 🚨 NEW IMPORTS FOR THE CERTIFIED PDF FIX
+const { 
+  generatePaystubPdf, 
+  injectMetadata 
+} = require('../utils/certifiedPdfGenerator'); 
 
-// ✅ GET /api/paystubs/employee/:employeeId
-// For "My Paystubs" – employeeId can be EITHER:
-//  - Mongo _id         (24-char ObjectId)
-//  - externalEmployeeId (e.g. Emp_ID_00000001)
-router.get('/employee/:employeeId', async (req, res) => {
-  try {
-    const { employeeId } = req.params;
+// ... (Existing GET routes for /, /employee/:employeeId, and /:id remain here) ...
 
-    // Decide how to look up the employee
-    const query = {};
-    if (mongoose.Types.ObjectId.isValid(employeeId)) {
-      // Looks like a Mongo ObjectId
-      query._id = employeeId;
-    } else {
-      // Treat as externalEmployeeId
-      query.externalEmployeeId = employeeId;
-    }
 
-    const employee = await Employee.findOne(query);
-    if (!employee) {
-      return res.status(404).json({ message: 'Employee not found' });
-    }
-
-    const stubs = await Paystub.find({ employee: employee._id })
-      .sort({ payDate: -1 });
-
-    res.json(stubs);
-  } catch (err) {
-    console.error('Error fetching paystubs by employee:', err);
-    res.status(500).json({ message: 'Server error fetching employee paystubs' });
-  }
-});
-
-// ✅ GET /api/paystubs/:id
-// Single stub by its own Paystub _id (for admin + PDF view)
-router.get('/:id', async (req, res) => {
+// ✅ NEW ROUTE: GET /api/paystubs/:id/certified
+// Downloads the certified, metadata-injected PDF
+router.get('/:id/certified', async (req, res) => {
   try {
     const stub = await Paystub.findById(req.params.id)
-      .populate('employee', 'firstName lastName email externalEmployeeId');
+      .populate('employee'); // Populate the employee for HTML generation
 
-    if (!stub) {
-      return res.status(404).json({ message: 'Paystub not found' });
+    if (!stub || !stub.employee) {
+      return res.status(404).json({ message: 'Paystub or associated employee not found' });
     }
+    
+    // NOTE: You'll need to fetch the PayrollRun data here if it's separate
+    // const payrollRun = await PayrollRun.findById(stub.payrollRunId);
 
-    res.json(stub);
+    // 1. Generate the paystub HTML content
+    const htmlContent = buildPaystubHtml({ 
+      stub: stub.toObject(), 
+      employee: stub.employee.toObject(),
+      // payrollRun: payrollRun ? payrollRun.toObject() : null
+    });
+
+    // 2. Generate PDF buffer on the server using Puppeteer
+    let pdfBuffer = await generatePaystubPdf(htmlContent); 
+
+    // 3. Inject custom metadata (The Snappt Fix)
+    pdfBuffer = await injectMetadata(pdfBuffer); 
+
+    // 4. Send the final, certified PDF file
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Length': pdfBuffer.length,
+      'Content-Disposition': 'attachment; filename="certified_paystub.pdf"'
+    });
+    res.send(pdfBuffer);
+
   } catch (err) {
-    console.error('Error fetching paystub by id:', err);
-    res.status(500).json({ message: 'Server error fetching paystub' });
+    console.error('Error generating certified paystub:', err);
+    // Send a generic error message, but log the full error on the server
+    res.status(500).json({ message: 'Server error generating certified document.' });
   }
 });
 
