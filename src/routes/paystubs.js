@@ -58,6 +58,7 @@ async function generateSinglePagePdf(paystub, res) {
 
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${finalFileName}"`);
+
   
   doc.pipe(res);
 
