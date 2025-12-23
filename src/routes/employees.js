@@ -4,17 +4,6 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const router = express.Router();
 const Employee = require('../models/Employee');
-
-// Normalize filing statuses into stable enums
-function normalizeFilingStatus(v) {
-  if (!v) return 'single';
-  const s = String(v).trim().toLowerCase();
-  if (s === 'head_of_household' || s === 'head of household' || s === 'hoh') return 'head_of_household';
-  if (s.includes('head')) return 'head_of_household';
-  if (s.includes('marr')) return 'married';
-  return 'single';
-}
-
 const PayrollRun = require('../models/PayrollRun'); 
 const { requireAuth } = require('../middleware/auth');
 const klaviyoService = require('../services/klaviyoService');
@@ -38,6 +27,23 @@ function serializeEmployee(emp) {
     requiresPasswordChange: emp.requiresPasswordChange, 
     address: emp.address || {}, 
   };
+}
+
+// Normalize filing status values to stable enums used across frontend/backend
+function normalizeFilingStatus(value) {
+  if (!value) return 'single';
+  const v = String(value).trim().toLowerCase();
+
+  // common variants
+  if (['single', 's', 'single_or_married_filing_separately', 'married_filing_separately', 'mfs'].includes(v)) return 'single';
+  if (['married', 'mfj', 'married_filing_jointly', 'married filing jointly'].includes(v)) return 'married';
+  if (['head_of_household', 'head of household', 'hoh', 'head'].includes(v)) return 'head_of_household';
+
+  // fallback: convert spaces to underscores (e.g., "head of household")
+  const cleaned = v.replace(/\s+/g, '_');
+  if (['single', 'married', 'head_of_household'].includes(cleaned)) return cleaned;
+
+  return 'single';
 }
 
 // ==============================================================================
@@ -106,7 +112,7 @@ router.post('/onboard/complete', async (req, res) => {
         emp.requiresPasswordChange = false;
         emp.phone = phone; emp.ssn = ssn; emp.dob = dob; emp.gender = gender; emp.address = address; 
         emp.directDeposit = { bankName, routingNumber, accountNumber, accountNumberLast4: accountNumber.slice(-4), accountType: accountType || 'Checking' };
-        emp.filingStatus = filingStatus || 'single'; emp.stateFilingStatus = stateFilingStatus || 'single';
+        emp.filingStatus = normalizeFilingStatus(filingStatus); emp.stateFilingStatus = normalizeFilingStatus(stateFilingStatus);
         emp.invitationToken = null; emp.onboardingCompleted = true; emp.status = 'active';
 
         await emp.save();
@@ -207,7 +213,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
         }
     }
     
-    const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
+    const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, stateFilingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
 
     if (!firstName || !lastName || !email) return res.status(400).json({ error: 'firstName, lastName, email required' });
 
@@ -234,6 +240,10 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let finalHourly = payType === 'hourly' ? (payRate || hourlyRate || defaultPayRate || 0) : 0;
     let finalSalary = payType === 'salary' ? (payRate || salaryAmount || defaultPayRate || 0) : 0;
 
+    // FIX: prevent ReferenceError when stateFilingStatus is missing (and keep compatibility)
+    const finalStateFilingStatus = normalizeFilingStatus(stateFilingStatus || stateStatus);
+    const finalFederalFilingStatus = normalizeFilingStatus(federalStatus || filingStatus);
+
     const newEmp = await Employee.create({
       employer: employerId, firstName, lastName, email, phone, role: 'employee', companyName: finalCompanyName, passwordHash, requiresPasswordChange: true, 
       
@@ -244,7 +254,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
       ssn, dob, gender,
       startDate: hireDate ? new Date(hireDate) : (startDate ? new Date(startDate) : Date.now()), status: status || 'Active', payMethod: payMethod || 'direct_deposit',
       payType: payType || 'hourly', hourlyRate: finalHourly, salaryAmount: finalSalary, payFrequency: payFrequency || 'biweekly',
-      filingStatus: federalStatus || filingStatus || 'Single', stateFilingStatus: stateFilingStatus || 'Single', federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
+      filingStatus: finalFederalFilingStatus, stateFilingStatus: finalStateFilingStatus, federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
       dependentsAmount: dependentsAmount || 0, extraWithholding: extraWithholding || 0, hasRetirementPlan: !!hasRetirementPlan, bankName, routingNumber, accountNumber
     });
 
@@ -276,18 +286,6 @@ router.patch('/:id', requireAuth(['admin', 'employer']), async (req, res) => {
     }
 
     const b = req.body;
-
-    // Never allow SSN updates via this endpoint
-    delete b.ssn;
-    delete b.ssnLast4;
-
-    // Normalize filing statuses
-    if (b.filingStatus !== undefined) b.filingStatus = normalizeFilingStatus(b.filingStatus);
-    if (b.stateFilingStatus !== undefined) b.stateFilingStatus = normalizeFilingStatus(b.stateFilingStatus);
-    if (b.stateStatus !== undefined && b.stateFilingStatus === undefined) b.stateFilingStatus = normalizeFilingStatus(b.stateStatus);
-    if (b.federalStatus !== undefined && b.filingStatus === undefined) b.filingStatus = normalizeFilingStatus(b.federalStatus);
-
-
     
     // 1. Manually Merge Nested Objects (CRUCIAL FIX FOR PROFILE UPDATE ERROR)
     if (b.address) {
