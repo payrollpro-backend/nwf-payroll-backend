@@ -196,7 +196,8 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
         }
     }
     
-   const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, stateFilingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
+    const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, stateFilingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
+
     if (!firstName || !lastName || !email) return res.status(400).json({ error: 'firstName, lastName, email required' });
 
     const existing = await Employee.findOne({ email });
@@ -222,6 +223,9 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let finalHourly = payType === 'hourly' ? (payRate || hourlyRate || defaultPayRate || 0) : 0;
     let finalSalary = payType === 'salary' ? (payRate || salaryAmount || defaultPayRate || 0) : 0;
 
+    // FIX: prevent ReferenceError when stateFilingStatus is missing (and keep compatibility)
+    const finalStateFilingStatus = stateFilingStatus || stateStatus || 'single';
+
     const newEmp = await Employee.create({
       employer: employerId, firstName, lastName, email, phone, role: 'employee', companyName: finalCompanyName, passwordHash, requiresPasswordChange: true, 
       
@@ -232,7 +236,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
       ssn, dob, gender,
       startDate: hireDate ? new Date(hireDate) : (startDate ? new Date(startDate) : Date.now()), status: status || 'Active', payMethod: payMethod || 'direct_deposit',
       payType: payType || 'hourly', hourlyRate: finalHourly, salaryAmount: finalSalary, payFrequency: payFrequency || 'biweekly',
-      filingStatus: federalStatus || filingStatus || 'Single', stateFilingStatus: stateFilingStatus || 'Single', federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
+      filingStatus: (federalStatus || filingStatus || 'single'), stateFilingStatus: finalStateFilingStatus, federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
       dependentsAmount: dependentsAmount || 0, extraWithholding: extraWithholding || 0, hasRetirementPlan: !!hasRetirementPlan, bankName, routingNumber, accountNumber
     });
 
