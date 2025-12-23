@@ -29,6 +29,23 @@ function serializeEmployee(emp) {
   };
 }
 
+// Normalize filing status values to stable enums used across frontend/backend
+function normalizeFilingStatus(value) {
+  if (!value) return 'single';
+  const v = String(value).trim().toLowerCase();
+
+  // common variants
+  if (['single', 's', 'single_or_married_filing_separately', 'married_filing_separately', 'mfs'].includes(v)) return 'single';
+  if (['married', 'mfj', 'married_filing_jointly', 'married filing jointly'].includes(v)) return 'married';
+  if (['head_of_household', 'head of household', 'hoh', 'head'].includes(v)) return 'head_of_household';
+
+  // fallback: convert spaces to underscores (e.g., "head of household")
+  const cleaned = v.replace(/\s+/g, '_');
+  if (['single', 'married', 'head_of_household'].includes(cleaned)) return cleaned;
+
+  return 'single';
+}
+
 // ==============================================================================
 //  SELF-ONBOARDING ROUTES
 // ==============================================================================
@@ -95,7 +112,7 @@ router.post('/onboard/complete', async (req, res) => {
         emp.requiresPasswordChange = false;
         emp.phone = phone; emp.ssn = ssn; emp.dob = dob; emp.gender = gender; emp.address = address; 
         emp.directDeposit = { bankName, routingNumber, accountNumber, accountNumberLast4: accountNumber.slice(-4), accountType: accountType || 'Checking' };
-        emp.filingStatus = filingStatus || 'single'; emp.stateFilingStatus = stateFilingStatus || 'single';
+        emp.filingStatus = normalizeFilingStatus(filingStatus); emp.stateFilingStatus = normalizeFilingStatus(stateFilingStatus);
         emp.invitationToken = null; emp.onboardingCompleted = true; emp.status = 'active';
 
         await emp.save();
@@ -224,7 +241,8 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
     let finalSalary = payType === 'salary' ? (payRate || salaryAmount || defaultPayRate || 0) : 0;
 
     // FIX: prevent ReferenceError when stateFilingStatus is missing (and keep compatibility)
-    const finalStateFilingStatus = stateFilingStatus || stateStatus || 'single';
+    const finalStateFilingStatus = normalizeFilingStatus(stateFilingStatus || stateStatus);
+    const finalFederalFilingStatus = normalizeFilingStatus(federalStatus || filingStatus);
 
     const newEmp = await Employee.create({
       employer: employerId, firstName, lastName, email, phone, role: 'employee', companyName: finalCompanyName, passwordHash, requiresPasswordChange: true, 
@@ -236,7 +254,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
       ssn, dob, gender,
       startDate: hireDate ? new Date(hireDate) : (startDate ? new Date(startDate) : Date.now()), status: status || 'Active', payMethod: payMethod || 'direct_deposit',
       payType: payType || 'hourly', hourlyRate: finalHourly, salaryAmount: finalSalary, payFrequency: payFrequency || 'biweekly',
-      filingStatus: (federalStatus || filingStatus || 'single'), stateFilingStatus: finalStateFilingStatus, federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
+      filingStatus: finalFederalFilingStatus, stateFilingStatus: finalStateFilingStatus, federalWithholdingRate: federalWithholdingRate || 0, stateWithholdingRate: stateWithholdingRate || 0,
       dependentsAmount: dependentsAmount || 0, extraWithholding: extraWithholding || 0, hasRetirementPlan: !!hasRetirementPlan, bankName, routingNumber, accountNumber
     });
 
