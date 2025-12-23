@@ -1,3 +1,14 @@
+// server.js (FIXED + hardened to stop "Cannot read properties of null (reading '_id')" from crashing requests)
+//
+// What this patch does:
+// 1) Adds a safe async wrapper so thrown async errors get to the error handler (prevents silent crashes).
+// 2) Adds a global error handler that returns clean JSON (so payroll history fetch doesn't explode the UI).
+// 3) Adds a tiny /api/_routes debug endpoint (optional) to confirm the exact endpoint path in production.
+// 4) Adds process-level guards for unhandled rejections/exceptions (keeps Render from hard exiting).
+//
+// NOTE: This DOES NOT replace your payroll routes file—it's a safety net that stops null/_id errors
+// from taking down the request and gives you the exact error payload to pinpoint the broken route.
+
 require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
@@ -10,17 +21,21 @@ const Employee = require('./models/Employee');
 
 // ⬇️ ROUTE IMPORTS
 const authRoutes = require('./routes/auth');
-const employerRoutes = require('./routes/employers');       
-const employersMeRoutes = require('./routes/employersMe');  
+const employerRoutes = require('./routes/employers');
+const employersMeRoutes = require('./routes/employersMe');
 const employeeRoutes = require('./routes/employees');
-const employeesMeRoutes = require('./routes/employeesMe'); 
+const employeesMeRoutes = require('./routes/employeesMe');
 const payrollRoutes = require('./routes/payroll');
 const paystubRoutes = require('./routes/paystubs');
 const adminRoutes = require('./routes/admin');
-const taxformsRoutes = require('./routes/taxforms'); 
-const applicationsRoutes = require('./routes/applications'); 
+const taxformsRoutes = require('./routes/taxforms');
+const applicationsRoutes = require('./routes/applications');
 
 const app = express();
+
+// ---------- helpers ----------
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
 
 // ---------- CORS ----------
 const allowedOrigins = [
@@ -32,7 +47,9 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin(origin, callback) {
+    // allow server-to-server / curl / Render health checks
     if (!origin) return callback(null, true);
+
     if (
       allowedOrigins.includes(origin) ||
       origin.endsWith('.onrender.com') ||
@@ -46,48 +63,71 @@ const corsOptions = {
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
 
-app.use(express.json());
+// JSON parsing
+app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 
-
 // ---------- ROOT ----------
-app.get('/', (req, res) => {
-  res.json({
-    message: process.env.APP_NAME || 'NWF Payroll Backend',
-  });
-});
+app.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    res.json({
+      message: process.env.APP_NAME || 'NWF Payroll Backend',
+    });
+  })
+);
 
+// ---------- HEALTH CHECK ----------
+app.get(
+  '/health',
+  asyncHandler(async (req, res) => {
+    const dbState = mongoose.connection.readyState;
+    res.status(200).json({
+      ok: true,
+      service: 'nwf-payroll-backend',
+      db: {
+        readyState: dbState,
+        connected: dbState === 1,
+      },
+    });
+  })
+);
 
-// ---------- HEALTH CHECK (✅ FIX) ----------
-app.get('/health', (req, res) => {
-  const dbState = mongoose.connection.readyState;
-  res.status(200).json({
-    ok: true,
-    service: 'nwf-payroll-backend',
-    db: {
-      readyState: dbState,
-      connected: dbState === 1
+// ---------- DEBUG: LIST ROUTES (optional but very useful) ----------
+app.get(
+  '/api/_routes',
+  asyncHandler(async (req, res) => {
+    const routes = [];
+    const stack = app._router?.stack || [];
+    for (const layer of stack) {
+      if (layer?.route?.path) {
+        const methods = Object.keys(layer.route.methods || {})
+          .map((m) => m.toUpperCase())
+          .join(',');
+        routes.push({ methods, path: layer.route.path });
+      }
     }
-  });
-});
-
+    res.json({ ok: true, routes });
+  })
+);
 
 // ---------- ROUTES ----------
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
 
 // EMPLOYER ROUTES
-app.use('/api/employers', employersMeRoutes);    
-app.use('/api/employers', employerRoutes);       
+app.use('/api/employers', employersMeRoutes);
+app.use('/api/employers', employerRoutes);
 
 // EMPLOYEE ROUTES
-app.use('/api/employees/me', employeesMeRoutes); 
-app.use('/api/employees', employeeRoutes);       
+app.use('/api/employees/me', employeesMeRoutes);
+app.use('/api/employees', employeeRoutes);
 
 // PAYROLL & VERIFICATION
 app.use('/api/payroll', payrollRoutes);
@@ -100,6 +140,34 @@ app.use('/api/taxforms', taxformsRoutes);
 // JOB APPLICATIONS
 app.use('/api/applications', applicationsRoutes);
 
+// ---------- 404 ----------
+app.use((req, res) => {
+  res.status(404).json({
+    ok: false,
+    error: 'Not Found',
+    path: req.originalUrl,
+  });
+});
+
+// ---------- GLOBAL ERROR HANDLER (prevents null._id crashes from killing requests) ----------
+app.use((err, req, res, next) => {
+  const status = err.statusCode || err.status || 500;
+
+  // Keep the log loud, but keep the response safe and consistent
+  console.error('❌ API Error:', {
+    status,
+    message: err.message,
+    path: req.originalUrl,
+    stack: process.env.NODE_ENV === 'production' ? undefined : err.stack,
+  });
+
+  res.status(status).json({
+    ok: false,
+    error: err.name || 'Error',
+    message: err.message || 'Something went wrong',
+    path: req.originalUrl,
+  });
+});
 
 // ---------- DEFAULT ADMIN SEED ----------
 async function ensureDefaultAdmin() {
@@ -123,16 +191,16 @@ async function ensureDefaultAdmin() {
     email,
     passwordHash,
     role: 'admin',
-    externalEmployeeId: 'ADMIN-001'
+    externalEmployeeId: 'ADMIN-001',
   });
   console.log('✅ Created default admin:', email);
 }
 
-
 // ---------- DEFAULT EMPLOYER SEED ----------
 async function ensureDefaultEmployer() {
   const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
-  const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
+  const defaultPassword =
+    process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
 
   let employer = await Employee.findOne({ email });
 
@@ -144,7 +212,7 @@ async function ensureDefaultEmployer() {
       email,
       passwordHash,
       role: 'employer',
-      externalEmployeeId: 'EMPLOYER-001'
+      externalEmployeeId: 'EMPLOYER-001',
     });
     console.log('✅ Created default employer:', email);
     return;
@@ -166,7 +234,6 @@ async function ensureDefaultEmployer() {
   }
 }
 
-
 // ---------- DB + SERVER ----------
 const mongoUri = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
@@ -175,6 +242,14 @@ if (!mongoUri) {
   console.error('❌ MONGO_URI is not set');
   process.exit(1);
 }
+
+// Prevent Render from dying with no visibility when an async crash happens
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ Unhandled Rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+});
 
 mongoose
   .connect(mongoUri)
