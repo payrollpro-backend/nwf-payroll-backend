@@ -43,6 +43,8 @@ const allowedOrigins = [
   'https://nwfpayroll.com',
   'http://localhost:5500',
   'http://127.0.0.1:5500',
+  'https://j-hinton.com',
+  'https://www.j-hinton.com'
 ];
 
 const corsOptions = {
@@ -116,6 +118,36 @@ app.get(
     res.json({ ok: true, routes });
   })
 );
+
+// ---------- DYNAMIC STRIPE CHECKOUT ----------
+app.post('/create-checkout-session', asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  // Ensure the Stripe Secret Key is present in your Render environment variables
+  const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
+  const lineItems = items.map(item => {
+    return {
+      price_data: {
+        currency: 'usd',
+        product_data: {
+          name: item.name || 'J.Hinton Accessory',
+          images: item.image ? [item.image] : [],
+        },
+        unit_amount: item.price, // Value in cents
+      },
+      quantity: item.qty || 1,
+    };
+  });
+
+  const session = await stripe.checkout.sessions.create({
+    line_items: lineItems,
+    mode: 'payment',
+    success_url: 'https://j-hinton.com/success.html',
+    cancel_url: 'https://j-hinton.com/cart.html',
+  });
+
+  res.json({ url: session.url });
+}));
 
 // ---------- ROUTES ----------
 app.use('/api/auth', authRoutes);
