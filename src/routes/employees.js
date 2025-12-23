@@ -196,8 +196,7 @@ router.post('/', requireAuth(['admin', 'employer']), async (req, res) => {
         }
     }
     
-    const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
-
+   const { firstName, lastName, email, phone, ssn, dob, gender, address, companyName, hireDate, startDate, status, payMethod, payType, payRate, payFrequency, hourlyRate, salaryAmount, federalStatus, stateStatus, filingStatus, stateFilingStatus, dependentsAmount, extraWithholding, hasRetirementPlan, federalWithholdingRate, stateWithholdingRate, bankName, bankType, routingNumber, accountNumber } = req.body || {};
     if (!firstName || !lastName || !email) return res.status(400).json({ error: 'firstName, lastName, email required' });
 
     const existing = await Employee.findOne({ email });
