@@ -101,7 +101,9 @@ const EmployeeSchema = new Schema(
     },
 
     hourlyRate: { type: Number, default: 0 },
-    salaryAmount: { type: Number, default: 0 },
+    annualSalary: { type: Number, default: 0 },
+payRate: { type: Number, default: 0 }, // legacy mirror (annual)
+
 
     payFrequency: {
       type: String,
