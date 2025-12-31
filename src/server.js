@@ -134,6 +134,24 @@ app.get(
     res.json({ ok: true, routes });
   })
 );
+app.get("/__dev/smtp-test", async (req, res) => {
+  try {
+    const { sendEmail } = require("./src/utils/sendEmail"); // if sendEmail is in src
+    // or: const { sendEmail } = require("./utils/sendEmail"); // if not in src
+
+    await sendEmail({
+      to: "admin@nwfpayroll.com",
+      subject: "SMTP Test - NWF Payroll",
+      text: "If you got this email, SMTP is working.",
+      html: "<p><b>SMTP is working.</b></p>",
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("SMTP TEST ERROR:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
 
 // ---------- DYNAMIC STRIPE CHECKOUT ----------
 app.post('/create-checkout-session', asyncHandler(async (req, res) => {
