@@ -6,18 +6,18 @@ const crypto = require('crypto');
 const Employee = require('../models/Employee');
 const { requireAuth } = require('../middleware/auth');
 
-// OPTIONAL: If you add utils/sendEmail.js (SMTP), uncomment this line:
-// const { sendEmail } = require('../utils/sendEmail');
+// ✅ SMTP Email Utility (Hostinger)
+const { sendEmail } = require('../utils/sendEmail');
 
-// If you're keeping Klaviyo for now, keep this:
-const klaviyoService = require('../services/klaviyoService');
+// If you're keeping Klaviyo for now, keep this (we won't use it below unless you want to)
+// const klaviyoService = require('../services/klaviyoService');
 
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
-// IMPORTANT: use env if possible
-const FRONTEND_URL = process.env.FRONTEND_URL || 'https://www.nwfpayroll.com';
+// ✅ IMPORTANT: Your live domain (set this in Render ENV too)
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://nwfpayroll.com';
 
 // --- Payment Link URL ---
 const STRIPE_PAYMENT_LINK_URL =
@@ -169,7 +169,7 @@ router.post('/login', async (req, res) => {
 /**
  * CHANGE PASSWORD (auth required)
  * POST /api/auth/change-password
- * body: { newPassword }  (you can expand later to require currentPassword)
+ * body: { newPassword }
  */
 router.post('/change-password', requireAuth(['employee', 'employer', 'admin']), async (req, res) => {
   try {
@@ -211,30 +211,39 @@ router.post('/forgot-password', async (req, res) => {
       return res.json({ message: 'If an account matches that email, a reset link was sent.' });
     }
 
-    // Keep your current JWT reset approach (minimal change):
+    // JWT reset token (1 hour)
     const resetToken = jwt.sign(
       { id: user._id.toString(), email: user.email, purpose: 'password_reset' },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // New endpoint name expectation: /reset-password (your frontend page can be reset-password.html)
-    const resetLink = `${FRONTEND_URL}/reset-password.html?token=${encodeURIComponent(
-      resetToken
-    )}&email=${encodeURIComponent(email)}`;
+    // ✅ Correct frontend path (your pages live in /nwfpayroll/)
+    const resetLink =
+      `${FRONTEND_URL}/nwfpayroll/reset-password.html` +
+      `?token=${encodeURIComponent(resetToken)}` +
+      `&email=${encodeURIComponent(email)}`;
 
-    // Option A: Keep Klaviyo (current behavior)
-    if (klaviyoService && klaviyoService.sendPasswordResetEmail) {
-      await klaviyoService.sendPasswordResetEmail(user.email, resetLink);
-    }
-
-    // Option B: SMTP via Hostinger (admin@nwfpayroll.com) — uncomment when you add utils/sendEmail.js
-    // await sendEmail({
-    //   to: user.email,
-    //   subject: 'Reset your NWF Payroll password',
-    //   text: `Reset your password: ${resetLink}`,
-    //   html: `<p>Reset your password:</p><p><a href="${resetLink}">Reset Password</a></p>`,
-    // });
+    // ✅ Send via Hostinger SMTP (admin@nwfpayroll.com)
+    await sendEmail({
+      to: user.email,
+      subject: 'Reset your NWF Payroll password',
+      text: `Reset your password: ${resetLink}`,
+      html: `
+        <div style="font-family:Inter,Arial,sans-serif;color:#111;line-height:1.6">
+          <h2 style="margin:0 0 10px">Reset your password</h2>
+          <p style="margin:0 0 14px">We received a request to reset your password.</p>
+          <p style="margin:0 0 18px">
+            <a href="${resetLink}" style="display:inline-block;padding:10px 14px;text-decoration:none;border:1px solid #111;color:#111;border-radius:10px">
+              Reset Password
+            </a>
+          </p>
+          <p style="margin:0;color:#666;font-size:13px">
+            This link expires in 1 hour. If you didn’t request this, you can ignore this email.
+          </p>
+        </div>
+      `,
+    });
 
     return res.json({ message: 'If an account matches that email, a reset link was sent.' });
   } catch (err) {
@@ -247,8 +256,6 @@ router.post('/forgot-password', async (req, res) => {
  * RESET PASSWORD
  * POST /api/auth/reset-password
  * body: { email, token, newPassword }
- *
- * NOTE: This replaces your old /reset-password-confirm endpoint.
  */
 router.post('/reset-password', async (req, res) => {
   try {
@@ -277,7 +284,6 @@ router.post('/reset-password', async (req, res) => {
       return res.status(400).json({ error: 'Invalid token type.' });
     }
 
-    // Ensure token email matches the request email (prevents token being reused across accounts)
     if (decoded.email && decoded.email.toLowerCase() !== email) {
       return res.status(400).json({ error: 'Token does not match this email.' });
     }
@@ -286,7 +292,7 @@ router.post('/reset-password', async (req, res) => {
     if (!user) return res.status(404).json({ error: 'User not found.' });
 
     user.passwordHash = await bcrypt.hash(newPassword, 10);
-    user.requiresPasswordChange = false; // good UX: clear this too
+    user.requiresPasswordChange = false;
     await user.save();
 
     return res.json({ message: 'Password updated successfully. You can now log in.' });
