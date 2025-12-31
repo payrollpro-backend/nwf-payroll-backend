@@ -220,9 +220,10 @@ router.post('/forgot-password', async (req, res) => {
 
     // ✅ Your frontend pages live in /nwfpayroll/
     const resetLink =
-      `${FRONTEND_URL}/nwfpayroll/reset-password.html` +
-      `?token=${encodeURIComponent(resetToken)}` +
-      `&email=${encodeURIComponent(email)}`;
+  `${FRONTEND_URL}/admin/reset-password.html` +
+  `?token=${encodeURIComponent(resetToken)}` +
+  `&email=${encodeURIComponent(email)}`;
+
 
     await sendEmail({
       to: user.email,
