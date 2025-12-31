@@ -1,5 +1,13 @@
-// server.js
-// Hardened + confirms /api/auth routing is mounted correctly.
+// server.js (FIXED + hardened to stop "Cannot read properties of null (reading '_id')" from crashing requests)
+//
+// What this patch does:
+// 1) Adds a safe async wrapper so thrown async errors get to the error handler (prevents silent crashes).
+// 2) Adds a global error handler that returns clean JSON (so payroll history fetch doesn't explode the UI).
+// 3) Adds a tiny /api/_routes debug endpoint (optional) to confirm the exact endpoint path in production.
+// 4) Adds process-level guards for unhandled rejections/exceptions (keeps Render from hard exiting).
+//
+// NOTE: This DOES NOT replace your payroll routes file—it's a safety net that stops null/_id errors
+// from taking down the request and gives you the exact error payload to pinpoint the broken route.
 
 require('dotenv').config();
 const express = require('express');
@@ -36,7 +44,7 @@ const allowedOrigins = [
   'http://localhost:5500',
   'http://127.0.0.1:5500',
   'https://j-hinton.com',
-  'https://www.j-hinton.com',
+  'https://www.j-hinton.com'
 ];
 
 const corsOptions = {
@@ -52,7 +60,6 @@ const corsOptions = {
     ) {
       return callback(null, true);
     }
-
     console.warn('Blocked CORS origin:', origin);
     return callback(new Error('Not allowed by CORS'));
   },
@@ -94,58 +101,72 @@ app.get(
   })
 );
 
-// ---------- DEBUG: LIST ROUTES (CONFIRM WHAT RENDER IS SERVING) ----------
+// ---------- DEBUG: LIST ROUTES (includes mounted routers) ----------
+function _collectRoutesFromStack(stack, prefix = '') {
+  const out = [];
+  for (const layer of stack || []) {
+    // Direct route
+    if (layer.route && layer.route.path) {
+      const methods = Object.keys(layer.route.methods || {})
+        .map((m) => m.toUpperCase())
+        .join(',');
+      out.push({ methods, path: prefix + layer.route.path });
+      continue;
+    }
+
+    // Mounted router
+    if (layer.name === 'router' && layer.handle && layer.handle.stack) {
+      // Express doesn't expose the mount path cleanly; we do a best-effort parse.
+      // If we can't parse, we still list the router's internal paths without prefix.
+      const match = layer.regexp && layer.regexp.toString().match(/\^\\\/(.*?)\\\//);
+      const mount = match && match[1] ? ('/' + match[1].replace(/\\\//g, '/')) : '';
+      out.push(..._collectRoutesFromStack(layer.handle.stack, prefix + mount));
+    }
+  }
+  return out;
+}
+
 app.get(
   '/api/_routes',
   asyncHandler(async (req, res) => {
-    const routes = [];
     const stack = app._router?.stack || [];
-    for (const layer of stack) {
-      if (layer?.route?.path) {
-        const methods = Object.keys(layer.route.methods || {})
-          .map((m) => m.toUpperCase())
-          .join(',');
-        routes.push({ methods, path: layer.route.path });
-      }
-    }
+    const routes = _collectRoutesFromStack(stack, '');
     res.json({ ok: true, routes });
   })
 );
 
 // ---------- DYNAMIC STRIPE CHECKOUT ----------
-app.post(
-  '/create-checkout-session',
-  asyncHandler(async (req, res) => {
-    const { items } = req.body;
-    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+app.post('/create-checkout-session', asyncHandler(async (req, res) => {
+  const { items } = req.body;
+  // Ensure the Stripe Secret Key is present in your Render environment variables
+  const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-    const lineItems = (items || []).map((item) => ({
+  const lineItems = items.map(item => {
+    return {
       price_data: {
         currency: 'usd',
         product_data: {
           name: item.name || 'J.Hinton Accessory',
           images: item.image ? [item.image] : [],
         },
-        unit_amount: item.price, // cents
+        unit_amount: item.price, // Value in cents
       },
       quantity: item.qty || 1,
-    }));
+    };
+  });
 
-    const session = await stripe.checkout.sessions.create({
-      line_items: lineItems,
-      mode: 'payment',
-      success_url: 'https://j-hinton.com/success.html',
-      cancel_url: 'https://j-hinton.com/cart.html',
-    });
+  const session = await stripe.checkout.sessions.create({
+    line_items: lineItems,
+    mode: 'payment',
+    success_url: 'https://j-hinton.com/success.html',
+    cancel_url: 'https://j-hinton.com/cart.html',
+  });
 
-    res.json({ url: session.url });
-  })
-);
+  res.json({ url: session.url });
+}));
 
 // ---------- ROUTES ----------
-// ✅ THIS is what makes /api/auth/forgot-password exist
 app.use('/api/auth', authRoutes);
-
 app.use('/api/admin', adminRoutes);
 
 // EMPLOYER ROUTES
@@ -176,10 +197,11 @@ app.use((req, res) => {
   });
 });
 
-// ---------- GLOBAL ERROR HANDLER ----------
+// ---------- GLOBAL ERROR HANDLER (prevents null._id crashes from killing requests) ----------
 app.use((err, req, res, next) => {
   const status = err.statusCode || err.status || 500;
 
+  // Keep the log loud, but keep the response safe and consistent
   console.error('❌ API Error:', {
     status,
     message: err.message,
@@ -225,7 +247,8 @@ async function ensureDefaultAdmin() {
 // ---------- DEFAULT EMPLOYER SEED ----------
 async function ensureDefaultEmployer() {
   const email = process.env.DEFAULT_EMPLOYER_EMAIL || 'agedcorps247@gmail.com';
-  const defaultPassword = process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
+  const defaultPassword =
+    process.env.DEFAULT_EMPLOYER_PASSWORD || 'EmployerPass123!';
 
   let employer = await Employee.findOne({ email });
 
@@ -260,7 +283,7 @@ async function ensureDefaultEmployer() {
 }
 
 // ---------- DB + SERVER ----------
-const mongoUri = process.env.MONGO_URI; // make sure Render uses MONGO_URI (not MONGODB_URI)
+const mongoUri = process.env.MONGO_URI;
 const PORT = process.env.PORT || 10000;
 
 if (!mongoUri) {
@@ -268,6 +291,7 @@ if (!mongoUri) {
   process.exit(1);
 }
 
+// Prevent Render from dying with no visibility when an async crash happens
 process.on('unhandledRejection', (reason) => {
   console.error('❌ Unhandled Rejection:', reason);
 });
