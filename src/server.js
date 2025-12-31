@@ -100,6 +100,34 @@ app.get(
     });
   })
 );
+// ---------- DEV SMTP TEST (REMOVE AFTER CONFIRMING) ----------
+app.get('/__dev/smtp-test', async (req, res) => {
+  try {
+    // Try both possible paths so this works regardless of structure
+    let sendEmail;
+    try {
+      ({ sendEmail } = require('./utils/sendEmail'));
+    } catch {
+      ({ sendEmail } = require('./src/utils/sendEmail'));
+    }
+
+    await sendEmail({
+      to: 'admin@nwfpayroll.com',
+      subject: 'SMTP Test - NWF Payroll',
+      text: 'If you received this email, SMTP is working.',
+      html: '<p><b>SMTP is working.</b></p>',
+    });
+
+    res.json({ ok: true, message: 'SMTP email sent successfully' });
+  } catch (err) {
+    console.error('SMTP TEST ERROR:', err);
+    res.status(500).json({
+      ok: false,
+      error: err.message,
+      code: err.code,
+    });
+  }
+});
 
 // ---------- DEBUG: LIST ROUTES (includes mounted routers) ----------
 function _collectRoutesFromStack(stack, prefix = '') {
