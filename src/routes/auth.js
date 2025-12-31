@@ -9,14 +9,14 @@ const { requireAuth } = require('../middleware/auth');
 // ✅ SMTP Email Utility (Hostinger)
 const { sendEmail } = require('../utils/sendEmail');
 
-// If you're keeping Klaviyo for now, keep this (we won't use it below unless you want to)
+// (Optional) If you still use Klaviyo elsewhere, keep it, but we won't rely on it for password reset.
 // const klaviyoService = require('../services/klaviyoService');
 
 const router = express.Router();
 
 const JWT_SECRET = process.env.JWT_SECRET || 'nwf_dev_secret_change_later';
 
-// ✅ IMPORTANT: Your live domain (set this in Render ENV too)
+// ✅ Use Render ENV if present; default to your live domain (no www)
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://nwfpayroll.com';
 
 // --- Payment Link URL ---
@@ -144,6 +144,7 @@ router.post('/login', async (req, res) => {
       if (!ok) return res.status(400).json({ error: 'Invalid password' });
     }
 
+    // If role is passed, enforce portal access (admins can access any)
     if (role && user.role !== role && user.role !== 'admin') {
       return res.status(403).json({ error: 'Access denied for this portal' });
     }
@@ -195,7 +196,7 @@ router.post('/change-password', requireAuth(['employee', 'employer', 'admin']), 
 });
 
 /**
- * FORGOT PASSWORD
+ * FORGOT PASSWORD (works for employee/employer/admin)
  * POST /api/auth/forgot-password
  * body: { email }
  */
@@ -211,35 +212,34 @@ router.post('/forgot-password', async (req, res) => {
       return res.json({ message: 'If an account matches that email, a reset link was sent.' });
     }
 
-    // JWT reset token (1 hour)
     const resetToken = jwt.sign(
       { id: user._id.toString(), email: user.email, purpose: 'password_reset' },
       JWT_SECRET,
       { expiresIn: '1h' }
     );
 
-    // ✅ Correct frontend path (your pages live in /nwfpayroll/)
+    // ✅ Your frontend pages live in /nwfpayroll/
     const resetLink =
       `${FRONTEND_URL}/nwfpayroll/reset-password.html` +
       `?token=${encodeURIComponent(resetToken)}` +
       `&email=${encodeURIComponent(email)}`;
 
-    // ✅ Send via Hostinger SMTP (admin@nwfpayroll.com)
     await sendEmail({
       to: user.email,
       subject: 'Reset your NWF Payroll password',
       text: `Reset your password: ${resetLink}`,
       html: `
-        <div style="font-family:Inter,Arial,sans-serif;color:#111;line-height:1.6">
+        <div style="font-family:Arial,sans-serif;line-height:1.6;color:#111">
           <h2 style="margin:0 0 10px">Reset your password</h2>
-          <p style="margin:0 0 14px">We received a request to reset your password.</p>
+          <p style="margin:0 0 14px">Click the button below to reset your password.</p>
           <p style="margin:0 0 18px">
-            <a href="${resetLink}" style="display:inline-block;padding:10px 14px;text-decoration:none;border:1px solid #111;color:#111;border-radius:10px">
+            <a href="${resetLink}"
+               style="display:inline-block;padding:10px 14px;border:1px solid #111;border-radius:10px;color:#111;text-decoration:none">
               Reset Password
             </a>
           </p>
           <p style="margin:0;color:#666;font-size:13px">
-            This link expires in 1 hour. If you didn’t request this, you can ignore this email.
+            This link expires in 1 hour. If you didn’t request this, ignore this email.
           </p>
         </div>
       `,
@@ -275,9 +275,7 @@ router.post('/reset-password', async (req, res) => {
     try {
       decoded = jwt.verify(token, JWT_SECRET);
     } catch (e) {
-      return res
-        .status(400)
-        .json({ error: 'Invalid or expired reset link. Please try again.' });
+      return res.status(400).json({ error: 'Invalid or expired reset link. Please try again.' });
     }
 
     if (decoded.purpose !== 'password_reset') {
